@@ -1,0 +1,196 @@
+#include "InteractionManager.h"
+
+namespace TSA::Interaction
+{
+
+InteractionManager::InteractionManager(QObject* parent)
+    : QObject(parent)
+{
+}
+
+void InteractionManager::setMode(InteractionMode mode)
+{
+    if (m_mode != mode)
+    {
+        m_mode = mode;
+        resetDrawingState();
+        emit modeChanged(m_mode);
+        emit promptChanged(promptText());
+    }
+}
+
+bool InteractionManager::isDrawingMode() const noexcept
+{
+    switch (m_mode)
+    {
+    case InteractionMode::DrawNode:
+    case InteractionMode::DrawBar:
+    case InteractionMode::DrawBeam:
+    case InteractionMode::DrawColumn:
+    case InteractionMode::DrawSlab:
+    case InteractionMode::DrawWall:
+    case InteractionMode::DrawFoundation:
+    case InteractionMode::DrawTruss:
+    case InteractionMode::DrawCable:
+    case InteractionMode::DrawStayCable:
+    case InteractionMode::DrawSuspensionCable:
+    case InteractionMode::DrawHanger:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool InteractionManager::isTransformMode() const noexcept
+{
+    return m_mode == InteractionMode::MoveOrigin3D || m_mode == InteractionMode::Paste3D;
+}
+
+void InteractionManager::setStartPoint(const gp_Pnt& pt, int nodeId)
+{
+    m_startPoint = pt;
+    m_startNodeId = nodeId;
+    m_hasStartPoint = true;
+    emit promptChanged(promptText());
+}
+
+void InteractionManager::addSlabPoint(const gp_Pnt& pt, int nodeId)
+{
+    m_slabPoints.push_back(pt);
+    m_slabNodeIds.push_back(nodeId);
+    emit promptChanged(promptText());
+}
+
+void InteractionManager::resetDrawingState()
+{
+    m_hasStartPoint = false;
+    m_startPoint = gp_Pnt(0, 0, 0);
+    m_startNodeId = 0;
+    m_slabPoints.clear();
+    m_slabNodeIds.clear();
+    emit drawingStateReset();
+}
+
+void InteractionManager::requestSelection(const SelectionRequest& request)
+{
+    if (m_activeRequest.has_value())
+    {
+        cancelSelectionRequest();
+    }
+
+    m_activeRequest = request;
+
+    if (request.sender)
+    {
+        m_senderDestroyedConnection = connect(request.sender, &QObject::destroyed, this, [this]() {
+            cancelSelectionRequest();
+        });
+    }
+
+    emit selectionRequested(request);
+    emit promptChanged(promptText());
+}
+
+void InteractionManager::completeSelection(const SelectedEntity& result)
+{
+    if (!m_activeRequest.has_value())
+        return;
+
+    SelectionRequest req = *m_activeRequest;
+    m_activeRequest.reset();
+    if (m_senderDestroyedConnection)
+    {
+        disconnect(m_senderDestroyedConnection);
+    }
+
+    emit selectionCompleted(result);
+
+    if (req.onSelected)
+    {
+        req.onSelected(result);
+    }
+
+    emit promptChanged(promptText());
+}
+
+void InteractionManager::cancelSelectionRequest()
+{
+    if (!m_activeRequest.has_value())
+        return;
+
+    SelectionRequest req = *m_activeRequest;
+    m_activeRequest.reset();
+    if (m_senderDestroyedConnection)
+    {
+        disconnect(m_senderDestroyedConnection);
+    }
+
+    emit selectionCancelled();
+
+    if (req.onCancelled)
+    {
+        req.onCancelled();
+    }
+
+    emit promptChanged(promptText());
+}
+
+QString InteractionManager::promptText() const
+{
+    if (m_activeRequest.has_value())
+    {
+        QString target = m_activeRequest->targetField.isEmpty() ? tr("un point") : m_activeRequest->targetField;
+        return tr("Sélection 3D : Cliquez dans le viewport pour définir %1 (Échap pour annuler)").arg(target);
+    }
+
+    switch (m_mode)
+    {
+    case InteractionMode::Select:
+        return tr("Sélection : Cliquez pour sélectionner des éléments (Shift = cumul, Clic Droit = annuler)");
+    case InteractionMode::DrawNode:
+        return tr("Dessin Nœud : Cliquez dans l'espace 3D ou sur une grille pour créer un nœud (Échap = Annuler)");
+    case InteractionMode::DrawBar:
+    case InteractionMode::DrawBeam:
+    case InteractionMode::DrawColumn:
+        return m_hasStartPoint
+            ? tr("Deuxième point : Cliquez le second point d'extrémité de la barre (Échap = Annuler)")
+            : tr("Premier point : Cliquez l'origine de la barre (Échap = Annuler)");
+    case InteractionMode::DrawSlab:
+        return tr("Contour Dalle : Cliquez les sommets de la dalle (%1 points). Entrée ou Double-clic = Valider").arg(m_slabPoints.size());
+    case InteractionMode::DrawWall:
+        return m_hasStartPoint
+            ? tr("Deuxième point : Cliquez le second point du voile (Échap = Annuler)")
+            : tr("Premier point : Cliquez le premier point de base du voile (Échap = Annuler)");
+    case InteractionMode::DrawFoundation:
+        return tr("Créer Semelle : Cliquez sur un nœud de base pour y créer une fondation (Échap = Annuler)");
+    case InteractionMode::DrawTruss:
+        return m_hasStartPoint
+            ? tr("Deuxième point : Cliquez la fin du membre de treillis (Échap = Annuler)")
+            : tr("Premier point : Cliquez l'origine du membre de treillis (Échap = Annuler)");
+    case InteractionMode::DrawCable:
+        return m_hasStartPoint
+            ? tr("Deuxième point : Cliquez l'extrémité du câble (Échap = Annuler)")
+            : tr("Premier point : Cliquez le premier point ou ancrage du câble (Échap = Annuler)");
+    case InteractionMode::DrawStayCable:
+        return m_hasStartPoint
+            ? tr("Nœud de Tablier : Cliquez le point d'ancrage sur le tablier (Échap = Annuler)")
+            : tr("Nœud de Pylône : Cliquez le nœud supérieur d'attache sur le pylône (Échap = Annuler)");
+    case InteractionMode::DrawSuspensionCable:
+        return m_hasStartPoint
+            ? tr("Pylône Droit : Cliquez le sommet du second pylône (Échap = Annuler)")
+            : tr("Pylône Gauche : Cliquez le sommet du premier pylône (Échap = Annuler)");
+    case InteractionMode::DrawHanger:
+        return m_hasStartPoint
+            ? tr("Nœud de Tablier : Cliquez le nœud de suspension sur le tablier (Échap = Annuler)")
+            : tr("Câble Principal : Cliquez le point d'attache haut sur le câble porteur (Échap = Annuler)");
+    case InteractionMode::MoveOrigin3D:
+        return tr("Nouvelle Origine : Cliquez le point devenant la nouvelle origine (0,0,0) (Échap = Annuler)");
+    case InteractionMode::Paste3D:
+        return tr("Coller 3D : Cliquez le point d'insertion pour les éléments du presse-papier (Échap = Annuler)");
+    case InteractionMode::ModelingTool:
+        return QString();   // invite fournie par l'outil actif (ModelingTool::prompt)
+    }
+    return QString();
+}
+
+} // namespace TSA::Interaction

@@ -1,0 +1,94 @@
+# OCCT & 3D — TSA
+
+> Document vivant. Voir aussi `.agents/rules/04-occt-3d.md`.
+
+## Composants réels
+
+### `src/Viewer/OccView`
+
+`class OccView : public QWidget, public TSA::Model::IModelObserver` — widget hôte du
+viewer OCCT. Détient/utilise :
+
+- `AIS_InteractiveContext`, `V3d_View`, `V3d_Viewer`, `OpenGl_GraphicDriver`,
+  `Aspect_DisplayConnection` — infrastructure de rendu OCCT.
+- `AIS_ViewCube` — cube de navigation.
+- `AIS_RubberBand` — sélection rectangle.
+- `Graphic3d_ClipPlane` — plans de coupe (outil de visualisation uniquement, ne modifie
+  jamais le modèle).
+- `TSA::Grid::GridManager` / `GridSnapManager` (via `GridRenderer.h`) — grille et
+  accrochage.
+- `TSA::Model::CreationPresets`, `TSA::Interaction::InteractionManager` — création et
+  interaction.
+- `MaterialVisual` — apparence visuelle (indépendante des propriétés mécaniques du
+  `Material` du modèle métier).
+
+En implémentant `IModelObserver`, `OccView` est directement notifié de tout changement du
+modèle (`onBeamAdded`, `onBeamModified`, `onBeamRemoved`, et l'équivalent pour chaque type
+d'élément) — c'est le point d'entrée réel de la synchronisation Model → 3D.
+
+### `src/Viewer/SelectionManager`
+
+Gestion de la sélection 3D — doit rester traçable jusqu'à des IDs d'éléments/nœuds du
+modèle.
+
+### `src/Viewer/MaterialVisual`, `src/Viewer/TextureManager`
+
+Apparence visuelle (couleur, rugosité, texture) — voir `VisualProperties` dans
+`src/Model/Material.h` pour les propriétés visuelles réellement stockées au niveau du
+modèle (`baseColor`, `roughness`, `metallic`, `transparency`, `shininess`, `textureName`,
+`texturePath`, `textureScaleU/V`).
+
+### `src/Viewer/ResultsVisualManager`
+
+Gestionnaire dédié à la visualisation interactive des résultats structurels dans le contexte OCCT :
+- Superposition et mise à l'échelle dynamique des déformées statiques ($\mathbf{u} \times s$).
+- Animation harmonique 30 FPS des modes propres ($\mathbf{\Phi}_i \cos(\omega_i t)$ via `QTimer`).
+- Rendu 3D des diagrammes d'efforts ($N, V_y, V_z, M_x, M_y, M_z$) en rubans orientés selon le repère local.
+- Vecteurs fléchés des réactions d'appuis aux nœuds encastrés ou appuyés.
+
+### `src/Geometry/*Geometry` (Geometry Builders)
+
+- **Éléments structuraux** : `BeamGeometry`, `SlabGeometry`, `WallGeometry`, `FoundationGeometry`, `CableGeometry3D` — construisent les `TopoDS_Shape` à partir des paramètres du modèle (section, matériau, nœuds/coordonnées).
+- **Appuis structuraux** : `SupportGeometry` (`src/Geometry/SupportGeometry.h/.cpp`) — construit les `TopoDS_Shape` B-Rep des conditions d'appui aux nœuds (plaques d'assise et hachures de sol pour encastrements, pyramides pivotantes pour rotules, rouleaux pour appuis simples, hélices 3D pour ressorts de translation, spirales pour ressorts de rotation). Géré dans `OccView` via `updateSupportShape`, `removeSupportShape`, `setSupportsVisible`.
+- **Charges & Moments 3D** (`OccView_Shapes.cpp`) :
+  - **Forces orientées** : Flèches 3D partant du point d'application (nœud ou position le long de la barre) et pointant dans la direction réelle du vecteur $\vec{F}$ sans inversion arbitraire ($+Z$ pointe vers le haut $\uparrow$, $-Z$ pointe vers le bas $\downarrow$).
+  - **Moments 3D volumiques** : Arcs circulaires hélicoïdaux de $270^\circ$ construits dans le plan normal au vecteur moment $\vec{M}$, surmontés d'une flèche conique orientée selon la règle de la main droite (sens direct pour $M > 0$).
+  - **Charges combinées** : Représentation simultanée force (rouge) + moment (magenta) avec étiquette de composantes ($F_x, F_y, F_z$ et $M_x, M_y, M_z$).
+  - **Sélection et contrôle** : Sélection directe par clic dans le viewport (`SelectionType::NodalLoad`, `SelectionType::MemberLoad`), bascule d'affichage (`setForcesVisible`, `setMomentsVisible`), échelle dynamique (`setLoadScale`).
+- **Résultats d'analyse** :
+  - `DeformedGeometry` : Construction de la fibre neutre déformée par interpolation cubique d'Hermite et extrusion solide B-Rep.
+  - `DiagramGeometry` : Construction des facettes de diagrammes 3D, contour, hachures et drapeaux d'extrema.
+
+### `src/Grid`
+
+`GridManager`, `GridSnapManager`, `GridRenderer` — grilles 3D paramétriques et
+accrochage, cohérentes avec `TSA::Coordinate::CoordinateSystem`.
+
+### `src/Interaction/InteractionManager`
+
+Gestion des interactions utilisateur dans le viewport 3D. `TODO: VERIFY IN SOURCE` pour
+le détail exact des évènements gérés.
+
+## Flux obligatoire
+
+```text
+Model → Paramètres (Section/Material/Node) → Geometry Builder → OCCT Shape → AIS → OccView
+```
+
+Ne jamais construire une `Shape` directement depuis des valeurs UI.
+
+## Performances
+
+Éviter les redraw/reconstructions globales de la scène : ne régénérer que la géométrie de
+l'élément modifié, via son *Geometry Builder* dédié et son callback `IModelObserver`
+correspondant.
+
+## Copie d'éléments
+
+La géométrie d'un élément copié (`StructuralClipboard`) doit être **recréée** depuis le
+modèle copié, jamais partagée avec la `Shape` OCCT source.
+
+## Vérification
+
+`TODO: VERIFY IN SOURCE` pour le détail interne de chaque Geometry Builder — lire les
+`.cpp` correspondants avant modification.
