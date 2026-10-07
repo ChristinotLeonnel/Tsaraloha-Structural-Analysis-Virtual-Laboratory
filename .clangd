@@ -1,0 +1,3 @@
+# Analyse IDE (clangd) : base de compilation produite par CMake (CMAKE_EXPORT_COMPILE_COMMANDS).
+CompileFlags:
+  CompilationDatabase: build-ninja-debug

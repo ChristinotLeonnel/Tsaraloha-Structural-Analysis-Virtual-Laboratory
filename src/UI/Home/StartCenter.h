@@ -1,8 +1,9 @@
 #pragma once
 
-// Start Center : seul écran affiché au lancement de TSA (aucun viewport, aucun panneau de
-// modélisation). Nouveau projet, ouverture d'un fichier et projets récents (aperçu du dernier état
-// réel de chaque modèle, nom, chemin, date de dernière ouverture), avec recherche et tri.
+// Start Center de TSALab : seul écran affiché au lancement (aucun viewport, aucun panneau de
+// modélisation). Colonne « laboratoire » (Nouveau modèle structural, Nouvelle expérience, Ouvrir,
+// Exemples) et projets récents (aperçu du dernier état réel de chaque modèle, nom, chemin, date de
+// dernière ouverture), avec recherche et tri.
 
 #include <QDateTime>
 #include <QFrame>
@@ -80,14 +81,18 @@ public:
 
 signals:
     void newProjectRequested();
+    void newExperimentRequested();
     void openDialogRequested();
     void openRequested(const QString& path);
+    /// Exemple du catalogue TSALab::Research::Examples (identifiant stable).
+    void exampleRequested(const QString& exampleId);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
 
 private:
+    QWidget* buildLabColumn();
     void applyTheme(bool dark);
     void applyFilter();
     void relayoutCards();
@@ -100,7 +105,9 @@ private:
     QLineEdit* m_search = nullptr;
     QComboBox* m_sort = nullptr;
     QLabel* m_count = nullptr;
+    QWidget* m_labColumn = nullptr;
     QPushButton* m_btnNew = nullptr;
+    QPushButton* m_btnExperiment = nullptr;
     QPushButton* m_btnOpen = nullptr;
     QScrollArea* m_scroll = nullptr;
     QWidget* m_cardsHost = nullptr;

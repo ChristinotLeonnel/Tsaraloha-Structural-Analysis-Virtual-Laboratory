@@ -1,9 +1,11 @@
 #pragma once
 
-// Fenêtre unique de TSA : barre de titre personnalisée + deux modes exclusifs.
+// Fenêtre unique de TSALab : barre de titre personnalisée + deux modes exclusifs.
 //   StartCenter      : écran d'accueil seul (créé au lancement) ;
-//   ProjectWorkspace : MainWindow (viewport, ruban, docks, barre d'état), créé au premier projet
-//                      ouvert ou créé, puis conservé et vidé à la fermeture du projet.
+//   ProjectWorkspace : LabWorkspaceHost (rail des espaces MODEL, ANALYSIS, RESULTS, ELEMENT LAB,
+//                      SOLVER LAB, EXPERIMENT, VALIDATION, VISUAL CODING) autour de MainWindow
+//                      (viewport, ruban, docks, barre d'état), créé au premier projet ouvert ou créé,
+//                      puis conservé et vidé à la fermeture du projet.
 // Cycle de vie : Start Center → Nouveau / Ouvrir / Projet récent → Workspace → Fermer → Start Center.
 
 #include <QHash>
@@ -12,6 +14,7 @@
 #include <memory>
 
 class MainWindow;
+namespace TSALab::UI { class LabWorkspaceHost; }
 class QAction;
 class QAbstractNativeEventFilter;
 class QMenu;
@@ -45,9 +48,13 @@ public:
     void showProjectWorkspace();
 
     void createNewProject();
+    /// Nouveau projet ouvert directement dans l'espace EXPERIMENT.
+    void createNewExperiment();
     void openProject();
-    /// Ouvre un fichier .tsa (projets récents, glisser-déposer, ligne de commande).
+    /// Ouvre un projet .tsalab ou importe un modèle .tsa (projets récents, glisser-déposer, ligne de commande).
     bool openProjectFile(const QString& path);
+    /// Ouvre la copie de travail d'un exemple (Documents/TSALab/Exemples), générée si absente.
+    bool openExample(const QString& exampleId);
     bool closeProject();
 
 protected:
@@ -86,6 +93,7 @@ private:
     QStackedWidget* m_stack = nullptr;
     StartCenter* m_startCenter = nullptr;
     MainWindow* m_workspace = nullptr;
+    TSALab::UI::LabWorkspaceHost* m_labHost = nullptr; ///< page du mode ProjectWorkspace (contient m_workspace)
 
     QAction* m_actNew = nullptr;
     QAction* m_actOpen = nullptr;

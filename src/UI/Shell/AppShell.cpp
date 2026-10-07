@@ -83,6 +83,8 @@ AppShell::AppShell(QWidget* parent)
     m_startCenter = new StartCenter(m_stack);
     m_stack->addWidget(m_startCenter);
     connect(m_startCenter, &StartCenter::newProjectRequested, this, &AppShell::createNewProject);
+    connect(m_startCenter, &StartCenter::newExperimentRequested, this, &AppShell::createNewExperiment);
+    connect(m_startCenter, &StartCenter::exampleRequested, this, &AppShell::openExample);
     connect(m_startCenter, &StartCenter::openDialogRequested, this, &AppShell::openProject);
     connect(m_startCenter, &StartCenter::openRequested, this, &AppShell::openProjectFile);
 
@@ -264,6 +266,42 @@ void AppShell::createNewProject()
         workspace->closeProject();
         showStartCenter();
     }
+}
+
+void AppShell::createNewExperiment()
+{
+    createNewProject();
+    if (isProjectOpen() && m_labHost) m_labHost->showWorkspace(TSALab::UI::LabWorkspace::Experiment);
+}
+
+bool AppShell::openExample(const QString& exampleId)
+{
+    const auto& catalog = TSALab::Research::Examples::catalog();
+    const auto it = std::find_if(catalog.begin(), catalog.end(),
+                                 [&](const auto& e) { return QString::fromStdString(e.id) == exampleId; });
+    if (it == catalog.end()) return false;
+
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+                            .filePath(QStringLiteral("%1/Exemples").arg(TSALab::Identity::kDocumentsFolder));
+    const QString title = QString::fromStdString(it->title);
+    QString fileName = title;
+    static const QRegularExpression invalidChars(QStringLiteral(R"([<>:"/\\|?*])"));
+    fileName.replace(invalidChars, QStringLiteral("-"));
+    const QString path = QDir(dir).filePath(fileName + TSALab::Identity::projectExtension());
+
+    // Copie de travail : générée au premier usage, puis rouverte telle que l'utilisateur l'a laissée.
+    if (!QFileInfo::exists(path))
+    {
+        QString error;
+        TSA::Model::Model model;
+        if (!QDir().mkpath(dir) || !TSALab::Research::Examples::build(exampleId.toStdString(), model)
+            || !TSA::IO::TSAProjectIO::saveProject(path, model, nullptr, title, QString(), true, QImage(), &error))
+        {
+            QMessageBox::warning(this, tr("Exemple"), tr("Impossible de créer l'exemple « %1 » :\n%2").arg(title, error));
+            return false;
+        }
+    }
+    return openProjectFile(path);
 }
 
 void AppShell::openProject()
