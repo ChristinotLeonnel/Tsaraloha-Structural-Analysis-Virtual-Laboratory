@@ -365,4 +365,5 @@ TSA/
 ## 👨‍💻 Auteur & Crédits
 
 * **Concepteur & Développeur Principal :** Christinot TSARALOHA
-* **Technologies Clés :** C++20 • Qt 6 • OpenCASCADE Technology • OpenSees • CMake • Ninja
+* **Technologies Clés :** C++20 • Qt 6 • OpenCASCADE Technology • OpenSees • CMake • Ninja#   T s a r a l o h a - S t r u c t u r a l - A n a l y s i s - V i r t u a l - L a b o r a t o r y  
+ 
