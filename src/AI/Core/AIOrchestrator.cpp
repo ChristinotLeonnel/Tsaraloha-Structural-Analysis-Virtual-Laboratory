@@ -339,7 +339,7 @@ QString AIOrchestrator::runtimeDetails() const
 QString AIOrchestrator::systemPrompt()
 {
     return QStringLiteral(
-        "Tu es l'assistant de co-ingénierie intégré à TSA (Tsaraloha Structural Analysis), logiciel de modélisation et "
+        "Tu es l'assistant de co-ingénierie intégré à TSALab (Tsaraloha Structural Analysis Laboratory), laboratoire de modélisation et "
         "d'analyse de structures (calcul OpenSees). Tu aides un ingénieur structure ; tu n'es pas une autorité.\n"
         "Règles impératives :\n"
         "1. N'utilise que les données fournies par TSA (bloc CONTEXTE TSA et résultats d'outils). Si une donnée manque, "

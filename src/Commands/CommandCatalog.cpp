@@ -76,7 +76,7 @@ void CommandCatalog::initializeStandardCatalog() {
   registerCommand({"cmd.file.export_diagnostic", "Exporter Diagnostic",
                    "Générer un rapport de diagnostic complet", "",
                    ":/icons/common/diagnostic.svg", CommandCategory::File});
-  registerCommand({"cmd.file.exit", "Quitter", "Quitter TSA", "Alt+F4",
+  registerCommand({"cmd.file.exit", "Quitter", "Quitter TSALab", "Alt+F4",
                    ":/icons/common/exit.svg", CommandCategory::File});
 
   // --- 2. EDIT ---
@@ -335,13 +335,13 @@ void CommandCatalog::initializeStandardCatalog() {
   registerCommand({"cmd.settings.theme", "Basculer Thème",
                    "Alterner entre le thème sombre et clair", "Ctrl+T",
                    ":/icons/common/theme_dark.svg", CommandCategory::Settings});
-  registerCommand({"cmd.help.help", "Aide Complète TSA",
+  registerCommand({"cmd.help.help", "Aide Complète TSALab",
                    "Ouvrir le centre d'aide, guide et documentation", "",
                    ":/icons/common/help.svg", CommandCategory::Settings});
   registerCommand({"cmd.help.shortcuts", "Raccourcis Clavier",
                    "Afficher la liste des raccourcis", "F1",
                    ":/icons/common/shortcuts.svg", CommandCategory::Settings});
-  registerCommand({"cmd.help.about", "À Propos de TSA",
+  registerCommand({"cmd.help.about", "À Propos de TSALab",
                    "Afficher les informations de version et crédits", "",
                    ":/icons/common/about.svg", CommandCategory::Settings});
 

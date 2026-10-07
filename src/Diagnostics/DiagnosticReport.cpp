@@ -53,14 +53,14 @@ std::string DiagnosticReport::exportReport(const TSA::Model::Model* model, const
     std::strftime(displayTime, sizeof(displayTime), "%Y-%m-%d %H:%M:%S", &tmBuffer);
 
     out << "================================================================================\n";
-    out << "TSA DIAGNOSTIC REPORT (RAPPORT DE DIAGNOSTIC TECHNIQUE)\n";
+    out << "TSALab DIAGNOSTIC REPORT (RAPPORT DE DIAGNOSTIC TECHNIQUE)\n";
     out << "Tsaraloha Structural Analysis\n";
     out << "================================================================================\n\n";
 
     // 1. Informations système & application
     out << "--- 1. INFORMATIONS SYSTÈME & ENVIRONNEMENT ---\n";
     out << "Rapport généré le : " << displayTime << "\n";
-    out << "Application       : TSA (Tsaraloha Structural Analysis)\n";
+    out << "Application       : TSALab (Tsaraloha Structural Analysis Laboratory)\n";
     out << "Version           : 0.1.0\n";
     out << "Session ID        : " << Logger::instance().sessionId() << "\n";
     out << "Fichier Log       : " << Logger::instance().sessionLogPath() << "\n";

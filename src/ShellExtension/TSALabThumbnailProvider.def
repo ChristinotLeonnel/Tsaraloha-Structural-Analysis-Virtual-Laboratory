@@ -1,4 +1,4 @@
-LIBRARY TSAThumbnailProvider
+LIBRARY TSALabThumbnailProvider
 EXPORTS
     DllGetClassObject   PRIVATE
     DllCanUnloadNow     PRIVATE

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 # Paramètres attendus passés via -D :
 # TARGET_DIR : Répertoire de l'exécutable (ex: build/Release ou build/Debug)
 # SOURCE_DIR : Répertoire racine du projet
-# TARGET_FILE : Chemin complet vers TSA.exe
+# TARGET_FILE : Chemin complet vers TSALab.exe
 # WINDEPLOYQT_EXECUTABLE : Chemin vers windeployqt.exe (optionnel)
 
 if(NOT TARGET_DIR)

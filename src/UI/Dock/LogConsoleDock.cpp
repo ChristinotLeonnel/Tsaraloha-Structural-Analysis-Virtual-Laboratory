@@ -114,7 +114,7 @@ void LogConsoleDock::setupUi()
 
     updateTheme(ThemeManager::instance().isDarkMode());
 
-    appendLog(tr("TSA Structural Analysis Modeler initialisé avec succès."), "SYS", "App");
+    appendLog(tr("TSALab — Structural Engineering Laboratory initialisé avec succès."), "SYS", "App");
     appendLog(tr("Moteur graphique OpenCASCADE 8.0 actif."), "SYS", "OCCT");
 }
 

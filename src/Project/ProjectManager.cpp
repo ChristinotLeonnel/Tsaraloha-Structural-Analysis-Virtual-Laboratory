@@ -29,7 +29,7 @@ QString ProjectManager::windowTitle() const
     {
         name += " *";
     }
-    return QString("TSA - %1").arg(name);
+    return QString("TSALab - %1").arg(name);
 }
 
 void ProjectManager::setModified(bool modified)

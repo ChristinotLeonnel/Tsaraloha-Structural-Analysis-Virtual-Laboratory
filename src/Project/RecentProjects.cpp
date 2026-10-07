@@ -1,4 +1,5 @@
 #include "RecentProjects.h"
+#include "../App/AppIdentity.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -16,7 +17,8 @@ namespace
 std::unique_ptr<QSettings> openSettings()
 {
     if (QCoreApplication::organizationName().isEmpty())
-        return std::make_unique<QSettings>(QStringLiteral("TSA Engineering"), QStringLiteral("TSA"));
+        return std::make_unique<QSettings>(QString::fromLatin1(TSALab::Identity::kOrganizationName),
+                                           QString::fromLatin1(TSALab::Identity::kProductName));
     return std::make_unique<QSettings>();
 }
 } // namespace

@@ -2,8 +2,8 @@
 setlocal
 
 :: Usage : run.bat [dossier_de_build]
-::   run.bat                    -> lance le TSA.exe le plus recemment compile parmi les dossiers connus
-::   run.bat build-ninja-debug  -> lance le TSA.exe de ce dossier (chemin relatif a la racine du projet)
+::   run.bat                    -> lance le TSALab.exe le plus recemment compile parmi les dossiers connus
+::   run.bat build-ninja-debug  -> lance le TSALab.exe de ce dossier (chemin relatif a la racine du projet)
 ::   run.bat build\Release      -> idem (presets Visual Studio)
 
 set "TSA_DIR=%~dp0"
@@ -24,20 +24,20 @@ set "TSA_EXE="
 :: Dossier de build explicite passe en argument
 if not "%~1"=="" goto explicit
 
-:: Sinon : TSA.exe le plus recent parmi les dossiers de build connus
+:: Sinon : TSALab.exe le plus recent parmi les dossiers de build connus
 ::   Ninja : build-ninja-release, build-ninja-debug
 ::   Visual Studio : build-debug\Debug, build\Release, build\Debug
 ::   Script setup_build.ps1 : build-msvc\Release, build-msvc\Debug
-for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$d=$env:TSA_DIR; @('build-ninja-release','build-ninja-debug','build-debug\Debug','build\Release','build\Debug','build-msvc\Release','build-msvc\Debug') | ForEach-Object { Join-Path $d ($_+'\TSA.exe') } | Where-Object { Test-Path $_ } | Get-Item | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName"`) do set "TSA_EXE=%%I"
+for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$d=$env:TSA_DIR; @('build-ninja-release','build-ninja-debug','build-debug\Debug','build\Release','build\Debug','build-msvc\Release','build-msvc\Debug') | ForEach-Object { Join-Path $d ($_+'\TSALab.exe') } | Where-Object { Test-Path $_ } | Get-Item | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName"`) do set "TSA_EXE=%%I"
 goto check
 
 :explicit
-if exist "%TSA_DIR%%~1\TSA.exe" set "TSA_EXE=%TSA_DIR%%~1\TSA.exe"
+if exist "%TSA_DIR%%~1\TSALab.exe" set "TSA_EXE=%TSA_DIR%%~1\TSALab.exe"
 
 :check
 if defined TSA_EXE goto launch
 
-echo [ERREUR] TSA.exe introuvable.
+echo [ERREUR] TSALab.exe introuvable.
 echo Dossiers recherches : build-ninja-release, build-ninja-debug, build-debug\Debug,
 echo build\Release, build\Debug, build-msvc\Release, build-msvc\Debug.
 echo Veuillez compiler le projet avant de lancer le script, ou indiquer le dossier :
@@ -46,7 +46,7 @@ pause
 exit /b 1
 
 :launch
-echo Lancement de TSA [%TSA_EXE%]...
+echo Lancement de TSALab [%TSA_EXE%]...
 start "" "%TSA_EXE%"
 
 endlocal

@@ -48,12 +48,12 @@ TitleBar::TitleBar(QWidget* parent)
     m_appMenu = new QMenu(this);
     m_appButton = new QToolButton(m_left);
     m_appButton->setObjectName("TitleBarAppButton");
-    m_appButton->setIcon(QIcon(":/icons/TSA.svg"));
+    m_appButton->setIcon(QIcon(":/icons/TSALab.svg"));
     m_appButton->setIconSize(QSize(22, 22));
     m_appButton->setFixedSize(40, kHeight - 4);
     m_appButton->setPopupMode(QToolButton::InstantPopup);
     m_appButton->setMenu(m_appMenu);
-    m_appButton->setToolTip(tr("Menu de l'application TSA"));
+    m_appButton->setToolTip(tr("Menu de l'application TSALab"));
     m_leftLayout->addWidget(m_appButton);
     addQuickAccessSeparator();
     row->addWidget(m_left);

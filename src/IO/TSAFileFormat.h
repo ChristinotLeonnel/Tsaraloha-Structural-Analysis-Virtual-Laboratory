@@ -8,9 +8,16 @@ namespace TSA::IO
 {
 
 // -----------------------------------------------------------------------------
-// Magic Signature: 'TSAF' (TSA File) en Little-Endian = 0x46415354
+// Signatures (Little-Endian)
+//   'TSLB' (TSALab) = 0x424C5354 : projets .tsalab écrits par TSALab ;
+//   'TSAF' (TSA)    = 0x46415354 : modèles .tsa de TSA, lus (import) mais jamais réécrits.
+// Même conteneur à chunks : un .tsalab = un .tsa 1.4 + signature propre + chunks du laboratoire.
 // -----------------------------------------------------------------------------
 constexpr uint32_t TSA_FILE_MAGIC = 0x46415354;
+constexpr uint32_t TSALAB_FILE_MAGIC = 0x424C5354;
+
+/// Signature lisible par TSALab (natif ou modèle TSA importé).
+constexpr bool isReadableFileMagic(uint32_t magic) { return magic == TSALAB_FILE_MAGIC || magic == TSA_FILE_MAGIC; }
 
 // -----------------------------------------------------------------------------
 // Versioning du format
@@ -79,7 +86,7 @@ constexpr uint32_t CHUNK_BIMM = 0x4D4D4942; // 'BIMM' : Couche BIM (produits phy
  */
 struct TSAFileHeader
 {
-    uint32_t magic = TSA_FILE_MAGIC;
+    uint32_t magic = TSALAB_FILE_MAGIC;
     uint16_t versionMajor = TSA_FORMAT_VERSION_MAJOR;
     uint16_t versionMinor = TSA_FORMAT_VERSION_MINOR;
     uint32_t appVersionMajor = TSA_APP_VERSION_MAJOR;
@@ -93,8 +100,8 @@ struct TSAFileHeader
     uint64_t payloadOffset = sizeof(TSAFileHeader); // Décalage vers le 1er chunk
 
     // Informations Projet
-    char projectName[64] = "Projet TSA";
-    char author[64] = "TSA Engineer";
+    char projectName[64] = "Projet TSALab";
+    char author[64] = "TSALab Engineer";
     char creationTimestamp[24] = "";
     char lastModifiedTimestamp[24] = "";
 

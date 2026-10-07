@@ -71,7 +71,7 @@ public:
     NDCDocument();
 
     ReportConfiguration config;
-    QString softwareVersion = "TSA v1.0.0 (Moteur EF : OpenSees v3.8.0)";
+    QString softwareVersion = "TSALab v0.1.0 (Moteur EF : OpenSees v3.8.0)";
     QString standardReference = "Eurocodes (EN 1990, EN 1991, EN 1992, EN 1993, EN 1998)";
 
     std::vector<NDCChapter> chapters;

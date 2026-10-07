@@ -1,5 +1,5 @@
 // Suite « thumbnail » : bloc d'aperçu du format .tsa 1.2 et extension Explorateur
-// TSAThumbnailProvider.dll (tests 127-129). La DLL est chargée directement (LoadLibrary +
+// TSALabThumbnailProvider.dll (tests 127-129). La DLL est chargée directement (LoadLibrary +
 // DllGetClassObject), exactement comme le fait le Shell, sans dépendre de l'enregistrement.
 // Fichier exclu du PCH (CMakeLists) : inclut <windows.h> avec ses propres réglages.
 
@@ -17,6 +17,7 @@
 
 #include "IO/TSAFile.h"
 #include "IO/TSAPreviewBlock.h"
+#include "ShellExtension/TSALabThumbnailProviderIds.h"
 #include "Model/Model.h"
 
 #include <QCoreApplication>
@@ -84,7 +85,7 @@ ThumbResult thumbnailFromDll(HMODULE dll, const QString& file, UINT cx)
     using GetClassObjectFn = HRESULT(STDAPICALLTYPE*)(REFCLSID, REFIID, void**);
     auto getClassObject = reinterpret_cast<GetClassObjectFn>(GetProcAddress(dll, "DllGetClassObject"));
     if (!getClassObject) return r;
-    static const CLSID clsid = { 0x5ba6698a, 0xed79, 0x442d, { 0x92, 0xee, 0x31, 0xda, 0x27, 0x04, 0xc0, 0x7d } };
+    static const CLSID clsid = TSALab::ShellExtension::kThumbnailProviderClsid;
 
     QElapsedTimer timer;
     timer.start();
@@ -182,10 +183,10 @@ bool runSuite_Thumbnail(int& passed)
 
     // TEST 128 : extension Explorateur chargée comme par le Shell (tailles, robustesse, vitesse)
     {
-        const QString dllPath = QCoreApplication::applicationDirPath() + "/TSAThumbnailProvider.dll";
+        const QString dllPath = QCoreApplication::applicationDirPath() + "/TSALabThumbnailProvider.dll";
         HMODULE dll = LoadLibraryExW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(dllPath).utf16()), nullptr,
                                      LOAD_WITH_ALTERED_SEARCH_PATH);
-        TEST_CHECK(dll != nullptr, "Test 128: TSAThumbnailProvider.dll chargée");
+        TEST_CHECK(dll != nullptr, "Test 128: TSALabThumbnailProvider.dll chargée");
         const HRESULT coHr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
         QTemporaryDir dir;

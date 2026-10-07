@@ -25,7 +25,7 @@ HelpDialog::HelpDialog(QWidget* parent)
 
 void HelpDialog::setupUi()
 {
-    setWindowTitle(tr("Aide & Documentation - TSA Structural Modeler"));
+    setWindowTitle(tr("Aide & Documentation - TSALab"));
     resize(860, 620);
     setMinimumSize(700, 500);
 
@@ -37,7 +37,7 @@ void HelpDialog::setupUi()
     auto* topHeader = new QHBoxLayout();
     topHeader->setSpacing(10);
 
-    auto* titleLabel = new QLabel(tr("📖 <b>Centre d'Aide & Documentation TSA</b>"), this);
+    auto* titleLabel = new QLabel(tr("📖 <b>Centre d'Aide & Documentation TSALab</b>"), this);
     titleLabel->setStyleSheet("font-size: 14px;");
     topHeader->addWidget(titleLabel);
 
@@ -71,7 +71,7 @@ void HelpDialog::setupUi()
     addTopic(tr("🎥 Vues, Caméra & Coupes"));
     addTopic(tr("⌨️ Raccourcis & Console"));
     addTopic(tr("⚙️ Analyse & Résultats EF"));
-    addTopic(tr("ℹ️ À Propos de TSA"));
+    addTopic(tr("ℹ️ À Propos de TSALab"));
 
     connect(m_topicsList, &QListWidget::currentRowChanged, this, &HelpDialog::onTopicChanged);
 
@@ -413,9 +413,12 @@ QString HelpDialog::getHelpContent(int topicIndex) const
     case 6: // À Propos de TSA
     default:
         return style +
-            "<h2>ℹ️ À Propos de Tsaraloha Structural Analysis (TSA)</h2>"
+            "<h2>ℹ️ À Propos de Tsaraloha Structural Analysis Laboratory (TSALab)</h2>"
+        "<p><b>TSALab</b> est le laboratoire d'ingénierie structurale de l'écosystème Tsaraloha : modéliser, "
+        "expérimenter, inspecter, tester, valider et comprendre. Il est issu de la base technique de TSA "
+        "(logiciel de production) dont il conserve la modélisation, le viewport 3D et les moteurs de calcul.</p>"
             "<div class='card'>"
-            "<p><b>TSA - Plateforme de Conception & Calcul de Structures 3D</b></p>"
+            "<p><b>Base technique héritée de TSA - Plateforme de Conception & Calcul de Structures 3D</b></p>"
             "<p>Développé pour les ingénieurs de génie civil, bureaux d'études et architectes recherchant la puissance de calcul allié à l'ergonomie CAO moderne.</p>"
             "<ul>"
             "<li><b>Version :</b> 1.0.0 (Release 2026)</li>"

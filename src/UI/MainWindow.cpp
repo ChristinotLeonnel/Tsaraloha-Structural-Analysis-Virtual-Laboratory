@@ -1,4 +1,5 @@
 #include "../Analysis/Engine/AnalysisManager.h"
+#include "App/AppIdentity.h"
 #include "Analysis/AnalysisEngineOptions.h"
 #include "Dock/AnalysisDataDock.h"
 #include "MainWindow.h"
@@ -287,7 +288,7 @@ void MainWindow::onResultsBecameStale()
 
 void MainWindow::setupUi()
 {
-    setWindowTitle(tr("TSA - 3D Structural Modeler"));
+    setWindowTitle(tr("TSALab - Structural Engineering Laboratory"));
     setDockNestingEnabled(true);
 
     // Widget central : Viewport OpenCASCADE entouré des règles graduées (style Robot)
@@ -1282,7 +1283,7 @@ bool MainWindow::maybeSave()
 
     const QMessageBox::StandardButton ret = QMessageBox::warning(
         this,
-        tr("TSA - Enregistrer les modifications"),
+        tr("TSALab - Enregistrer les modifications"),
         tr("Le projet actuel a été modifié.\nVoulez-vous enregistrer les modifications avant de continuer ?"),
         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
     );
@@ -1402,7 +1403,7 @@ void MainWindow::resetWorkspace(TSA::UI::ProjectTemplate projectTemplate)
 
     if (m_modelTree)
     {
-        m_modelTree->setProjectName(tr("Nouveau projet.tsa"));
+        m_modelTree->setProjectName(tr("Nouveau projet.tsalab"));
         m_modelTree->refreshAll();
     }
 
@@ -1420,7 +1421,7 @@ void MainWindow::resetWorkspace(TSA::UI::ProjectTemplate projectTemplate)
 
     if (m_statusProject)
     {
-        m_statusProject->setText(tr("Nouveau projet.tsa"));
+        m_statusProject->setText(tr("Nouveau projet.tsalab"));
     }
     if (m_statusView)
     {
@@ -1463,24 +1464,25 @@ void MainWindow::onActionSaveAs()
 bool MainWindow::saveFile(const QString& path)
 {
     QString targetPath = path;
+    // Un modèle TSA (.tsa) ouvert dans TSALab est une importation : il n'est jamais réécrit (TSA ne lirait
+    // plus la signature TSLB). L'enregistrement passe toujours par un fichier .tsalab.
+    if (!targetPath.isEmpty() && !TSALab::Identity::isNativeProjectFile(targetPath))
+        targetPath.clear();
     if (targetPath.isEmpty())
     {
         QString defaultName = (m_projectManager && m_projectManager->hasFilePath())
-            ? m_projectManager->currentFilePath()
-            : "Projet.tsa";
+            ? TSALab::Identity::withProjectExtension(m_projectManager->currentFilePath())
+            : QStringLiteral("Projet.tsalab");
         targetPath = QFileDialog::getSaveFileName(
             this,
-            tr("Enregistrer le projet TSA"),
+            tr("Enregistrer le projet TSALab"),
             defaultName,
-            tr("TSA Project (*.tsa);;Tous les fichiers (*.*)")
+            TSALab::Identity::saveFileFilter()
         );
         if (targetPath.isEmpty())
             return false;
 
-        if (!targetPath.endsWith(".tsa", Qt::CaseInsensitive))
-        {
-            targetPath += ".tsa";
-        }
+        targetPath = TSALab::Identity::withProjectExtension(targetPath);
     }
 
     if (!m_model)
@@ -1499,7 +1501,7 @@ bool MainWindow::saveFile(const QString& path)
     if (!ok)
     {
         QMessageBox::critical(this, tr("Erreur de sauvegarde"),
-            tr("Échec de l'enregistrement du projet TSA :\n%1").arg(errorMsg));
+            tr("Échec de l'enregistrement du projet TSALab :\n%1").arg(errorMsg));
         return false;
     }
 
@@ -1535,7 +1537,7 @@ bool MainWindow::loadFile(const QString& path)
     if (!ok)
     {
         QMessageBox::critical(this, tr("Erreur de chargement"),
-            tr("Échec de l'ouverture du projet TSA :\n%1").arg(errorMsg));
+            tr("Échec de l'ouverture du projet :\n%1").arg(errorMsg));
         return false;
     }
 
@@ -1618,7 +1620,7 @@ bool MainWindow::loadFile(const QString& path)
 
     if (m_consoleDock)
     {
-        m_consoleDock->appendLog(tr("Projet TSA chargé avec succès : %1").arg(path), "SYS");
+        m_consoleDock->appendLog(tr("Projet chargé avec succès : %1").arg(path), "SYS");
     }
     if (m_statusInfo)
     {
@@ -1834,7 +1836,7 @@ void MainWindow::dragEnterEvent(QDragEnterEvent* event)
     {
         for (const QUrl& url : event->mimeData()->urls())
         {
-            if (url.toLocalFile().endsWith(".tsa", Qt::CaseInsensitive))
+            if (TSALab::Identity::isOpenableProjectFile(url.toLocalFile()))
             {
                 event->acceptProposedAction();
                 return;
@@ -1851,7 +1853,7 @@ void MainWindow::dropEvent(QDropEvent* event)
         for (const QUrl& url : event->mimeData()->urls())
         {
             QString path = url.toLocalFile();
-            if (path.endsWith(".tsa", Qt::CaseInsensitive))
+            if (TSALab::Identity::isOpenableProjectFile(path))
             {
                 event->acceptProposedAction();
                 if (maybeSave())
@@ -1871,7 +1873,7 @@ void MainWindow::onActionExportDiagnosticReport()
     std::string reportPath = TSA::Diagnostics::DiagnosticReport::exportReport(m_model.get());
     if (!reportPath.empty())
     {
-        QMessageBox::information(this, tr("Rapport de Diagnostic TSA"),
+        QMessageBox::information(this, tr("Rapport de Diagnostic TSALab"),
             tr("Le rapport de diagnostic a été exporté avec succès :\n\n%1").arg(QString::fromStdString(reportPath)));
         if (m_consoleDock)
         {

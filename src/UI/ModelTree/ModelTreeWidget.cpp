@@ -200,7 +200,7 @@ void ModelTreeWidget::setProjectName(const QString& name)
     m_projectName = name;
     if (m_projectRootItem)
     {
-        m_projectRootItem->setText(0, m_projectName.isEmpty() ? tr("Projet.tsa") : m_projectName);
+        m_projectRootItem->setText(0, m_projectName.isEmpty() ? tr("Projet.tsalab") : m_projectName);
     }
 }
 
@@ -209,7 +209,7 @@ void ModelTreeWidget::createRootCategories()
     m_tree->clear();
     m_itemIndex.clear();
 
-    QString rootText = m_projectName.isEmpty() ? tr("Projet.tsa") : m_projectName;
+    QString rootText = m_projectName.isEmpty() ? tr("Projet.tsalab") : m_projectName;
     m_projectRootItem = new QTreeWidgetItem(m_tree, { rootText, "" });
     m_projectRootItem->setData(0, TypeRole, TypeProject);
     m_projectRootItem->setIcon(0, QIcon(":/icons/file/file_open.svg"));

@@ -1,4 +1,4 @@
-#include "test_common.h"
+﻿#include "test_common.h"
 #include <cstring>
 
 int main(int argc, char* argv[])
@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
         if (std::strncmp(argv[i], "--suite=", 8) == 0) {
             suiteFilter = argv[i] + 8;
         } else if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0) {
-            std::cout << "Usage: TSA_TestSuite [--suite=all|coordinates|model|io|commands|grids|viewer|cables|extensions|workplane|window|node|loads|opensees|supports|standards|ndc|extraction|ai|preview|thumbnail|engines|tools|mdd|cleanup|bim|snap]" << std::endl;
+            std::cout << "Usage: TSALab_TestSuite [--suite=all|coordinates|model|io|commands|grids|viewer|cables|extensions|workplane|window|node|loads|opensees|supports|standards|ndc|extraction|ai|preview|thumbnail|engines|tools|mdd|cleanup|bim|snap]" << std::endl;
             return 0;
         }
     }
@@ -128,7 +128,7 @@ int main(int argc, char* argv[])
     }
 #ifdef _WIN32
     if (suiteFilter == "all" || suiteFilter == "thumbnail") {
-        std::cout << "\n--- [Suite 20/20] Miniatures Explorateur : format 1.2 et TSAThumbnailProvider.dll (Tests 127-129) ---" << std::endl;
+        std::cout << "\n--- [Suite 20/20] Miniatures Explorateur : format 1.2 et TSALabThumbnailProvider.dll (Tests 127-129) ---" << std::endl;
         if (!runSuite_Thumbnail(passed)) allOk = false;
     }
 #endif

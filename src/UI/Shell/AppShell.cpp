@@ -7,6 +7,7 @@
 #endif
 
 #include "AppShell.h"
+#include "App/AppIdentity.h"
 
 #include "TitleBar.h"
 #include "../MainWindow.h"
@@ -49,7 +50,7 @@ QString firstTsaUrl(const QMimeData* mime)
 {
     if (!mime || !mime->hasUrls()) return QString();
     for (const QUrl& url : mime->urls())
-        if (url.toLocalFile().endsWith(".tsa", Qt::CaseInsensitive)) return url.toLocalFile();
+        if (TSALab::Identity::isOpenableProjectFile(url.toLocalFile())) return url.toLocalFile();
     return QString();
 }
 
@@ -64,7 +65,7 @@ AppShell::AppShell(QWidget* parent)
 {
     setObjectName("TSAAppShell");
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint);
-    setWindowIcon(QIcon(":/icons/TSA.ico"));
+    setWindowIcon(QIcon(":/icons/TSALab.ico"));
     setAutoFillBackground(true);
     setAcceptDrops(true);
 
@@ -106,7 +107,7 @@ void AppShell::createActions()
     m_actRedo = new QAction(QIcon(":/icons/redo.svg"), tr("Rétablir"), this);
     m_actCloseProject = new QAction(QIcon(":/icons/file/file_close.svg"), tr("Fermer le projet"), this);
     m_actTheme = new QAction(themeIcon(ThemeManager::instance().isDarkMode()), tr("Thème clair / sombre"), this);
-    m_actExit = new QAction(QIcon(":/icons/file_exit.svg"), tr("Quitter TSA"), this);
+    m_actExit = new QAction(QIcon(":/icons/file_exit.svg"), tr("Quitter TSALab"), this);
 
     m_actNew->setToolTip(tr("Nouveau projet (Ctrl+N)"));
     m_actOpen->setToolTip(tr("Ouvrir un projet (Ctrl+O)"));
@@ -243,8 +244,8 @@ void AppShell::showProjectWorkspace()
 void AppShell::updateTitle()
 {
     const QString title = isProjectOpen() && m_workspace && !m_workspace->windowTitle().isEmpty()
-        ? QString(m_workspace->windowTitle()).replace(QStringLiteral("TSA - "), QStringLiteral("TSA — "))
-        : tr("TSA — Start Center");
+        ? QString(m_workspace->windowTitle()).replace(QStringLiteral("TSALab - "), QStringLiteral("TSALab — "))
+        : tr("TSALab — Start Center");
     setWindowTitle(title);
     m_titleBar->setTitle(title);
 }
@@ -272,8 +273,8 @@ void AppShell::openProject()
     QString initialDir;
     const auto recent = TSA::Project::RecentProjects().list(false);
     if (!recent.isEmpty()) initialDir = QFileInfo(recent.first().path).absolutePath();
-    const QString path = QFileDialog::getOpenFileName(this, tr("Ouvrir un projet TSA"), initialDir,
-                                                      tr("TSA Project (*.tsa);;Tous les fichiers (*.*)"));
+    const QString path = QFileDialog::getOpenFileName(this, tr("Ouvrir un projet TSALab ou un modèle TSA"), initialDir,
+                                                      TSALab::Identity::openFileFilter());
     if (path.isEmpty()) return;
     loadIntoWorkspace(path);
 }

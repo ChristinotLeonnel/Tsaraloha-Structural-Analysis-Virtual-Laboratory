@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Symbole TSALab sans fond (aperçus, Start Center). -->
+  <defs>
+    <linearGradient id="labg_glass" x1="120" y1="96" x2="392" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#18F0D8"/>
+      <stop offset="100%" stop-color="#7C4DFF"/>
+    </linearGradient>
+    <linearGradient id="labg_liquid" x1="120" y1="320" x2="392" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#14D8C4"/>
+      <stop offset="100%" stop-color="#6A3DF0"/>
+    </linearGradient>
+  </defs>
+  <polygon points="161,320 351,320 392,408 120,408" fill="url(#labg_liquid)"/>
+  <polyline points="170,330 213,400 256,330 299,400 342,330" stroke="#0A1020" stroke-width="12"
+            stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+  <polyline points="216,104 216,200 120,408 392,408 296,200 296,104" stroke="url(#labg_glass)" stroke-width="26"
+            stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+  <line x1="190" y1="100" x2="322" y2="100" stroke="url(#labg_glass)" stroke-width="26" stroke-linecap="round"/>
+  <circle cx="216" cy="200" r="15" fill="#FFFFFF"/>
+  <circle cx="296" cy="200" r="15" fill="#FFFFFF"/>
+  <circle cx="120" cy="408" r="15" fill="#FFFFFF"/>
+  <circle cx="392" cy="408" r="15" fill="#FFFFFF"/>
+  <circle cx="246" cy="282" r="9" fill="#18F0D8"/>
+  <circle cx="272" cy="252" r="6" fill="#18F0D8" fill-opacity="0.8"/>
+</svg>

@@ -459,7 +459,7 @@ void GridDialog::setupUi()
     m_btnClose->setFixedHeight(26);
 
     m_btnHelp = new QPushButton(tr("Aide"), this);
-    m_btnHelp->setIcon(QIcon(":/icons/TSA.svg"));
+    m_btnHelp->setIcon(QIcon(":/icons/TSALab.svg"));
     m_btnHelp->setFixedHeight(26);
 
     bottomLayout2->addWidget(m_btnApply);

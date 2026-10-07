@@ -191,7 +191,7 @@ static LONG WINAPI TSAUnhandledExceptionFilter(EXCEPTION_POINTERS* ep)
 
     CrashHandler::writeCrashReport("Unhandled Exception (Crash natif détecté)", ep);
 
-    std::string msg = "TSA a rencontré un problème critique inattendu.\n\n"
+    std::string msg = "TSALab a rencontré un problème critique inattendu.\n\n"
                       "Un rapport de crash technique et les 100 dernières actions ont été enregistrés dans :\n"
                       + Logger::instance().logsDirectory() + "\\tsa_crash.log\n\n"
                       "L'application va maintenant se fermer.";
@@ -204,7 +204,7 @@ static LONG WINAPI TSAUnhandledExceptionFilter(EXCEPTION_POINTERS* ep)
         if (n > 0) MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, w.data(), n);
         return w;
     };
-    MessageBoxW(NULL, toWide(msg).c_str(), toWide("TSA - Arrêt d'urgence suite à une anomalie critique").c_str(),
+    MessageBoxW(NULL, toWide(msg).c_str(), toWide("TSALab - Arrêt d'urgence suite à une anomalie critique").c_str(),
                 MB_OK | MB_ICONERROR | MB_TASKMODAL);
 
     if (s_previousFilter)
@@ -305,12 +305,12 @@ void CrashHandler::writeCrashReport(const std::string& reason, void* exceptionPo
     std::strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &tmBuffer);
 
     out << "============================================================\n";
-    out << "TSA CRASH REPORT\n";
+    out << "TSALab CRASH REPORT\n";
     out << "============================================================\n\n";
 
     out << "Session ID       : " << Logger::instance().sessionId() << "\n";
     out << "Crash Timestamp  : " << timeStr << "\n";
-    out << "Application      : TSA (Tsaraloha Structural Analysis) v0.1.0\n";
+    out << "Application      : TSALab (Tsaraloha Structural Analysis Laboratory) v0.1.0\n";
     out << "Reason           : " << reason << "\n";
 
 #ifdef _WIN32

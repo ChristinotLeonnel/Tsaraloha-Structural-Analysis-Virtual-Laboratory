@@ -2,6 +2,10 @@
 <RCC version="1.0">
     <qresource prefix="/icons">
         <!-- Logo de l'application & variantes d'identité -->
+        <file alias="TSALab.svg">icons/TSALab.svg</file>
+        <file alias="TSALab.ico">icons/TSALab.ico</file>
+        <file alias="TSALab_glyph.svg">icons/TSALab_glyph.svg</file>
+        <!-- Identité TSA d'origine (écosystème Tsaraloha : import de modèles .tsa) -->
         <file alias="TSA.svg">icons/TSA.svg</file>
         <file alias="TSA.ico">icons/TSA.ico</file>
         <file alias="TSA_glyph.svg">icons/TSA_glyph.svg</file>

@@ -1,4 +1,6 @@
-// TSAThumbnailProvider.dll — miniatures des fichiers .tsa dans l'Explorateur Windows.
+// TSALabThumbnailProvider.dll — miniatures des fichiers .tsalab dans l'Explorateur Windows.
+// CLSID, extension et ProgID propres à TSALab : ne jamais réutiliser ceux de TSA (les deux logiciels
+// coexistent sur le poste, chacun propriétaire de son extension).
 //
 // Extension Shell (IThumbnailProvider + IInitializeWithStream) volontairement minimale :
 //  - aucune dépendance Qt / OpenCASCADE / solveur ; runtime C statique : fonctionne sur tout poste ;
@@ -25,6 +27,7 @@
 #include <wincodec.h>
 
 #include "../IO/TSAPreviewBlock.h"
+#include "TSALabThumbnailProviderIds.h"
 
 #include <atomic>
 #include <new>
@@ -34,12 +37,11 @@
 namespace
 {
 
-// {5BA6698A-ED79-442D-92EE-31DA2704C07D}
-constexpr CLSID CLSID_TSAThumbnailProvider = { 0x5ba6698a, 0xed79, 0x442d, { 0x92, 0xee, 0x31, 0xda, 0x27, 0x04, 0xc0, 0x7d } };
-constexpr wchar_t kClsidString[] = L"{5BA6698A-ED79-442D-92EE-31DA2704C07D}";
+constexpr CLSID CLSID_TSAThumbnailProvider = TSALab::ShellExtension::kThumbnailProviderClsid;
+constexpr const wchar_t* kClsidString = TSALab::ShellExtension::kThumbnailProviderClsidString;
 constexpr wchar_t kThumbnailHandlerKey[] = L"{e357fccd-a995-4576-b01f-234630154e96}"; // IThumbnailProvider
-constexpr wchar_t kExtension[] = L".tsa";
-constexpr wchar_t kProgId[] = L"TSA.Project";
+constexpr const wchar_t* kExtension = TSALab::ShellExtension::kExtension;
+constexpr const wchar_t* kProgId = TSALab::ShellExtension::kProgId;
 
 HINSTANCE g_module = nullptr;
 std::atomic<long> g_objects{ 0 };
@@ -303,7 +305,7 @@ HRESULT registerServer(HKEY root)
 
     const std::wstring classes = L"Software\\Classes\\";
     const std::wstring clsidKey = classes + L"CLSID\\" + kClsidString;
-    bool ok = setString(root, clsidKey, nullptr, L"TSA Thumbnail Provider")
+    bool ok = setString(root, clsidKey, nullptr, L"TSALab Thumbnail Provider")
            && setString(root, clsidKey + L"\\InprocServer32", nullptr, path)
            && setString(root, clsidKey + L"\\InprocServer32", L"ThreadingModel", L"Apartment");
     // Gestionnaire sur l'extension et sur le ProgID (selon la façon dont l'Explorateur résout le type).
@@ -371,8 +373,8 @@ STDAPI DllUnregisterServer()
     return unregisterServer(HKEY_CURRENT_USER);
 }
 
-// regsvr32 /i:machine TSAThumbnailProvider.dll   (installeur, droits administrateur)
-// regsvr32 /u /i:machine TSAThumbnailProvider.dll
+// regsvr32 /i:machine TSALabThumbnailProvider.dll   (installeur, droits administrateur)
+// regsvr32 /u /i:machine TSALabThumbnailProvider.dll
 STDAPI DllInstall(BOOL install, PCWSTR cmdLine)
 {
     const bool machine = cmdLine && _wcsicmp(cmdLine, L"machine") == 0;

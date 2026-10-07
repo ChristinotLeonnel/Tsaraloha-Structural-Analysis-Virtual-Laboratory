@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "AppIdentity.h"
 #include "../UI/Shell/AppShell.h"
 #include "../UI/Theme/ThemeManager.h"
 #include "../Platform/WindowsAssociation.h"
@@ -24,7 +25,7 @@ static void initWindowsAppUserModelID()
         SetAppIdFunc pFunc = reinterpret_cast<SetAppIdFunc>(GetProcAddress(hShell, "SetCurrentProcessExplicitAppUserModelID"));
         if (pFunc)
         {
-            pFunc(L"TSAEngineering.TSA.StructuralModeler.1.0");
+            pFunc(TSALab::Identity::kAppUserModelId);
         }
         FreeLibrary(hShell);
     }
@@ -39,7 +40,7 @@ Application::Application(int& argc, char** argv)
     TSA::Diagnostics::Logger::installQtMessageHandler();
     TSA::Diagnostics::CrashHandler::install();
 
-    TSA_LOG_INFO("App", "ApplicationStarted", "Démarrage de l'application TSA v0.1.0");
+    TSA_LOG_INFO("App", "ApplicationStarted", "Démarrage de TSALab v0.1.0");
 
 #ifdef _WIN32
     // Association explicite pour afficher l'icône sur la barre des tâches de Windows
@@ -57,13 +58,14 @@ Application::Application(int& argc, char** argv)
         installTranslator(qtTranslator);
     }
 
-    setApplicationName("TSA");
-    setOrganizationName("TSA Engineering");
-    setApplicationVersion("0.1.0");
+    setApplicationName(TSALab::Identity::kProductName);
+    setOrganizationName(TSALab::Identity::kOrganizationName);
+    setOrganizationDomain(TSALab::Identity::kOrganizationDomain);
+    setApplicationVersion(TSALab::Identity::kVersion);
 
     QIcon appIcon;
-    appIcon.addFile(":/icons/TSA.ico");
-    appIcon.addFile(":/icons/TSA.svg");
+    appIcon.addFile(":/icons/TSALab.ico");
+    appIcon.addFile(":/icons/TSALab.svg");
     setWindowIcon(appIcon);
 
     // Thème moderne AutoCAD 2024 Dark pour logiciel technique
@@ -86,7 +88,7 @@ Application::Application(int& argc, char** argv)
 
 Application::~Application()
 {
-    TSA_LOG_INFO("App", "ApplicationClosing", "Fermeture normale de l'application TSA");
+    TSA_LOG_INFO("App", "ApplicationClosing", "Fermeture normale de TSALab");
     TSA::Diagnostics::CrashHandler::uninstall();
     TSA::Diagnostics::Logger::instance().shutdown();
 }
@@ -94,7 +96,7 @@ Application::~Application()
 bool Application::init()
 {
 #ifdef _WIN32
-    // Enregistrement automatique de l'association .tsa pour l'utilisateur courant (Robot SA style)
+    // Enregistrement automatique de l'association .tsalab pour l'utilisateur courant (jamais .tsa : TSA en reste propriétaire)
     TSA::Platform::WindowsAssociation::registerFileAssociation();
 #endif
 
@@ -128,7 +130,7 @@ bool Application::init()
         {
             arg = arg.mid(1, arg.length() - 2);
         }
-        if (arg.endsWith(".tsa", Qt::CaseInsensitive))
+        if (TSALab::Identity::isOpenableProjectFile(arg))
         {
             m_shell->openProjectFile(arg);
             break;

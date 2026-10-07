@@ -93,7 +93,7 @@ std::string IfcStepWriter::document(const StepHeader& h) const
     out += "ISO-10303-21;\nHEADER;\n";
     out += "FILE_DESCRIPTION(('ViewDefinition [" + h.viewDefinition + "]'),'2;1');\n";
     out += "FILE_NAME(" + str(h.fileName) + "," + str(stamp) + ",(" + str(h.author) + "),(" + str(h.organization)
-        + "),'TSA STEP writer','TSA - Tsaraloha Structural Analysis','');\n";
+        + "),'TSALab STEP writer','TSALab - Tsaraloha Structural Analysis Laboratory','');\n";
     out += "FILE_SCHEMA(('" + h.schema + "'));\nENDSEC;\nDATA;\n";
     for (const auto& l : m_lines)
     {

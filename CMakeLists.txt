@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(TSA VERSION 0.1.0 LANGUAGES CXX)
+# TSALab — Tsaraloha Structural Analysis Laboratory.
+# Projet indépendant, issu d'une copie de la base technique de TSA (voir .claude/CLAUDE.md) :
+# aucune dépendance (sources, CMake, git) vers le dépôt TSA.
+project(TSALab VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,6 +43,7 @@ message(STATUS "OpenCASCADE Include: ${OpenCASCADE_INCLUDE_DIR}")
 # --- Point d'entrée et application ------------------------------------------
 set(APP_SOURCES
     src/main.cpp
+    src/App/AppIdentity.h
     src/App/Application.h
     src/App/Application.cpp
 )
@@ -68,7 +72,7 @@ set(UI_MAINWINDOW_SOURCES
     src/UI/MainWindow_ModelingTools.cpp
 )
 
-# --- Arbre du modèle — [CORE] (testé par TSA_Tests, suite cleanup) ------------
+# --- Arbre du modèle — [CORE] (testé par TSALab_Tests, suite cleanup) ------------
 set(UI_MODELTREE_SOURCES
     src/UI/ModelTree/ModelTreeWidget.h
     src/UI/ModelTree/ModelTreeWidget.cpp
@@ -145,7 +149,7 @@ set(UI_DIALOGS_SOURCES
 
 # Cette boîte de dialogue dépend d'ExtensionManager, testé indépendamment de
 # l'UI : on l'isole pour pouvoir la réutiliser dans CORE_SOURCES. — [CORE]
-# Fenêtre Analysis multi-moteurs et panneaux d'options par moteur — [CORE] (testée par TSA_Tests)
+# Fenêtre Analysis multi-moteurs et panneaux d'options par moteur — [CORE] (testée par TSALab_Tests)
 set(UI_TOOLS_SOURCES
     src/UI/Tools/ModelingToolDialog.h
     src/UI/Tools/ModelingToolDialog.cpp
@@ -695,7 +699,7 @@ set(PLATFORM_SOURCES
 # --- Ressources (icônes, .rc Windows) -----------------------------------------
 set(RESOURCES_SOURCES
     resources/resources.qrc
-    resources/TSA.rc
+    resources/TSALab.rc
 )
 
 # --- Regroupement des modules "métier", partagés avec les tests unitaires ----
@@ -768,7 +772,7 @@ set(SOURCES
 # =============================================================================
 # Options de build
 # =============================================================================
-option(TSA_BUILD_TESTS "Compiler la suite de tests TSA_Tests" ON)
+option(TSALAB_BUILD_TESTS "Compiler la suite de tests TSALab_Tests" ON)
 
 # Dépendances d'en-têtes Ninja + MSVC : Ninja reconnaît les lignes /showIncludes grâce au préfixe
 # détecté à la configuration. Avec un MSVC localisé (« Remarque : inclusion du fichier : »), ce
@@ -847,10 +851,12 @@ function(tsa_apply_common_settings target)
         endif()
         target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     endif()
+    # Racine des sources (ressources de développement : Extensions/, thirdparty/OpenSees) — voir AppIdentity.h
+    target_compile_definitions(${target} PRIVATE TSALAB_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 endfunction()
 
 # =============================================================================
-# TSA_Core : logique "métier", compilée UNE SEULE FOIS
+# TSALab_Core : logique "métier", compilée UNE SEULE FOIS
 # -----------------------------------------------------------------------------
 # Avant, CORE_SOURCES était compilé deux fois (exécutable + tests).
 # Bibliothèque OBJECT : les .obj sont réutilisés tels quels par les deux cibles
@@ -859,9 +865,9 @@ endfunction()
 # Moteur 2D « méthode des déplacements » (bibliothèque autonome du même auteur)
 add_subdirectory(thirdparty/MetDeDeplacement)
 
-add_library(TSA_Core OBJECT ${CORE_SOURCES})
-tsa_apply_common_settings(TSA_Core)
-target_link_libraries(TSA_Core PUBLIC
+add_library(TSALab_Core OBJECT ${CORE_SOURCES})
+tsa_apply_common_settings(TSALab_Core)
+target_link_libraries(TSALab_Core PUBLIC
     MetDeDeplacement
     Qt6::Core
     Qt6::Gui
@@ -872,7 +878,7 @@ target_link_libraries(TSA_Core PUBLIC
 
 # En-têtes précompilés : Qt et OCCT sont très lourds à parser.
 # Les autres cibles réutilisent ce PCH (REUSE_FROM).
-target_precompile_headers(TSA_Core PRIVATE
+target_precompile_headers(TSALab_Core PRIVATE
     <QtCore/QtCore>
     <QtGui/QtGui>
     <QtWidgets/QtWidgets>
@@ -894,7 +900,7 @@ target_precompile_headers(TSA_Core PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(TSA_Core PUBLIC DbgHelp Crypt32)
+    target_link_libraries(TSALab_Core PUBLIC DbgHelp Crypt32)
 endif()
 
 # Fichiers qui utilisent directement l'API Win32 (MessageBox, shell, dbghelp...) :
@@ -915,10 +921,10 @@ set_source_files_properties(
 # =============================================================================
 add_executable(${PROJECT_NAME} ${SOURCES})
 tsa_apply_common_settings(${PROJECT_NAME})
-target_precompile_headers(${PROJECT_NAME} REUSE_FROM TSA_Core)
+target_precompile_headers(${PROJECT_NAME} REUSE_FROM TSALab_Core)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    TSA_Core
+    TSALab_Core
     Qt6::Svg
 )
 if(WIN32)
@@ -944,7 +950,7 @@ endif()
 # Réutilise CORE_SOURCES : les tests ne compilent que la logique "métier",
 # sans les fichiers spécifiques à l'UI (fenêtres, dialogues, rendu du viewer...).
 # =============================================================================
-if(TSA_BUILD_TESTS)
+if(TSALAB_BUILD_TESTS)
 enable_testing()
 
 set(TEST_SOURCES
@@ -979,55 +985,56 @@ set(TEST_SOURCES
     resources/resources.qrc
 )
 
-add_executable(TSA_Tests ${TEST_SOURCES})
-tsa_apply_common_settings(TSA_Tests)
-target_include_directories(TSA_Tests PRIVATE tests)
-target_precompile_headers(TSA_Tests REUSE_FROM TSA_Core)
-target_link_libraries(TSA_Tests PRIVATE TSA_Core)
-set_target_properties(TSA_Tests PROPERTIES OUTPUT_NAME "TSA_TestSuite")
+add_executable(TSALab_Tests ${TEST_SOURCES})
+tsa_apply_common_settings(TSALab_Tests)
+target_include_directories(TSALab_Tests PRIVATE tests)
+target_precompile_headers(TSALab_Tests REUSE_FROM TSALab_Core)
+target_link_libraries(TSALab_Tests PRIVATE TSALab_Core)
+set_target_properties(TSALab_Tests PROPERTIES OUTPUT_NAME "TSALab_TestSuite")
 
 # =============================================================================
-# Extension Explorateur Windows : miniatures des fichiers .tsa
+# Extension Explorateur Windows : miniatures des fichiers .tsalab
 # -----------------------------------------------------------------------------
 # DLL autonome chargée par l'Explorateur : ni Qt, ni OpenCASCADE, runtime C statique (aucune
-# dépendance à installer). Placée à côté de TSA.exe, enregistrée par TSA au lancement (HKCU) ou par
+# dépendance à installer). Placée à côté de TSALab.exe, enregistrée par TSALab au lancement (HKCU) ou par
 # l'installeur (regsvr32 /i:machine). Voir docs/THUMBNAIL_PROVIDER.md.
 # =============================================================================
 if(WIN32)
-    add_library(TSAThumbnailProvider SHARED
-        src/ShellExtension/TSAThumbnailProvider.cpp
-        src/ShellExtension/TSAThumbnailProvider.def
+    add_library(TSALabThumbnailProvider SHARED
+        src/ShellExtension/TSALabThumbnailProvider.cpp
+        src/ShellExtension/TSALabThumbnailProvider.def
+        src/ShellExtension/TSALabThumbnailProviderIds.h
         src/IO/TSAPreviewBlock.h
         src/IO/TSAFileFormat.h
     )
-    target_compile_features(TSAThumbnailProvider PRIVATE cxx_std_20)
-    target_compile_definitions(TSAThumbnailProvider PRIVATE UNICODE _UNICODE)
-    set_target_properties(TSAThumbnailProvider PROPERTIES
+    target_compile_features(TSALabThumbnailProvider PRIVATE cxx_std_20)
+    target_compile_definitions(TSALabThumbnailProvider PRIVATE UNICODE _UNICODE)
+    set_target_properties(TSALabThumbnailProvider PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    target_link_libraries(TSAThumbnailProvider PRIVATE windowscodecs shlwapi ole32 shell32 advapi32)
-    add_dependencies(${PROJECT_NAME} TSAThumbnailProvider)
-    add_dependencies(TSA_Tests TSAThumbnailProvider)
-    target_link_libraries(TSA_Tests PRIVATE shlwapi ole32)
+    target_link_libraries(TSALabThumbnailProvider PRIVATE windowscodecs shlwapi ole32 shell32 advapi32)
+    add_dependencies(${PROJECT_NAME} TSALabThumbnailProvider)
+    add_dependencies(TSALab_Tests TSALabThumbnailProvider)
+    target_link_libraries(TSALab_Tests PRIVATE shlwapi ole32)
     set_source_files_properties(tests/test_thumbnail_provider.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif()
 
 # Tests complets et suites thématiques enregistrés sous CTest
-add_test(NAME TSA_AllTests COMMAND TSA_Tests)
-add_test(NAME TSA_CoordinatesTests COMMAND TSA_Tests --suite=coordinates)
-add_test(NAME TSA_ModelElementsTests COMMAND TSA_Tests --suite=model)
-add_test(NAME TSA_FileIOTests COMMAND TSA_Tests --suite=io)
-add_test(NAME TSA_CommandsUndoTests COMMAND TSA_Tests --suite=commands)
-add_test(NAME TSA_GridsTests COMMAND TSA_Tests --suite=grids)
-add_test(NAME TSA_ViewerTests COMMAND TSA_Tests --suite=viewer)
-add_test(NAME TSA_CablesTests COMMAND TSA_Tests --suite=cables)
-add_test(NAME TSA_ExtensionsTests COMMAND TSA_Tests --suite=extensions)
-add_test(NAME TSA_WorkPlaneTests COMMAND TSA_Tests --suite=workplane)
-add_test(NAME TSA_WindowManagerTests COMMAND TSA_Tests --suite=window)
-add_test(NAME TSA_NodeSystemTests COMMAND TSA_Tests --suite=node)
-add_test(NAME TSA_LoadsTests COMMAND TSA_Tests --suite=loads)
-add_test(NAME TSA_OpenSeesTests COMMAND TSA_Tests --suite=opensees)
-add_test(NAME TSA_SupportsTests COMMAND TSA_Tests --suite=supports)
-add_test(NAME TSA_StandardsTests COMMAND TSA_Tests --suite=standards)
+add_test(NAME TSALab_AllTests COMMAND TSALab_Tests)
+add_test(NAME TSALab_CoordinatesTests COMMAND TSALab_Tests --suite=coordinates)
+add_test(NAME TSALab_ModelElementsTests COMMAND TSALab_Tests --suite=model)
+add_test(NAME TSALab_FileIOTests COMMAND TSALab_Tests --suite=io)
+add_test(NAME TSALab_CommandsUndoTests COMMAND TSALab_Tests --suite=commands)
+add_test(NAME TSALab_GridsTests COMMAND TSALab_Tests --suite=grids)
+add_test(NAME TSALab_ViewerTests COMMAND TSALab_Tests --suite=viewer)
+add_test(NAME TSALab_CablesTests COMMAND TSALab_Tests --suite=cables)
+add_test(NAME TSALab_ExtensionsTests COMMAND TSALab_Tests --suite=extensions)
+add_test(NAME TSALab_WorkPlaneTests COMMAND TSALab_Tests --suite=workplane)
+add_test(NAME TSALab_WindowManagerTests COMMAND TSALab_Tests --suite=window)
+add_test(NAME TSALab_NodeSystemTests COMMAND TSALab_Tests --suite=node)
+add_test(NAME TSALab_LoadsTests COMMAND TSALab_Tests --suite=loads)
+add_test(NAME TSALab_OpenSeesTests COMMAND TSALab_Tests --suite=opensees)
+add_test(NAME TSALab_SupportsTests COMMAND TSALab_Tests --suite=supports)
+add_test(NAME TSALab_StandardsTests COMMAND TSALab_Tests --suite=standards)
 endif()
 
 # =============================================================================

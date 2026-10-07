@@ -16,7 +16,7 @@ LibraryDialog::LibraryDialog(TSA::Model::Model* model, QWidget* parent)
     : QDialog(parent)
     , m_model(model)
 {
-    setWindowTitle(tr("Bibliothèque Personnalisée TSA"));
+    setWindowTitle(tr("Bibliothèque Personnalisée TSALab"));
     resize(820, 560);
     setupUi();
 }

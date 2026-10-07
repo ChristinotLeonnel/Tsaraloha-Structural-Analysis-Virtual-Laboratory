@@ -244,7 +244,7 @@ void SurfaceCreationDialog::setupUi()
     m_btnClose->setIcon(QIcon(":/icons/cancel.svg"));
 
     m_btnHelp = new QPushButton(tr("Aide"), this);
-    m_btnHelp->setIcon(QIcon(":/icons/TSA.svg"));
+    m_btnHelp->setIcon(QIcon(":/icons/TSALab.svg"));
 
     btnLayout->addWidget(m_btnAdd);
     btnLayout->addWidget(m_btnClose);
