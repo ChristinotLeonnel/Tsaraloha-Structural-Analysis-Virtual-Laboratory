@@ -97,6 +97,21 @@ if(TARGET TSALabThumbnailProvider)
 endif()
 
 # =============================================================================
+# Plugin d'exemple (API de plugins de l'écosystème, TSA/src/Plugins/PluginApi.h) : DLL autonome, chargée au
+# démarrage depuis <application>/plugins par TSA et TSALab.
+# =============================================================================
+add_library(tsalab_sample_plugin SHARED ${CMAKE_CURRENT_SOURCE_DIR}/plugins/sample/SamplePlugin.cpp)
+target_include_directories(tsalab_sample_plugin PRIVATE ${TSA_ROOT_DIR}/src)
+target_compile_features(tsalab_sample_plugin PRIVATE cxx_std_20)
+set_target_properties(tsalab_sample_plugin PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/plugins
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/plugins)
+if(MSVC)
+    target_compile_options(tsalab_sample_plugin PRIVATE /W4 /permissive- /utf-8)
+endif()
+add_dependencies(TSALab tsalab_sample_plugin)
+
+# =============================================================================
 # Tests du laboratoire (la base commune est couverte par les tests de TSA)
 # =============================================================================
 if(TSA_BUILD_TESTS)
@@ -106,5 +121,7 @@ if(TSA_BUILD_TESTS)
     target_precompile_headers(TSALab_Tests REUSE_FROM TSALab_Model)
     target_link_libraries(TSALab_Tests PRIVATE TSALab_Model TSALab_Research)
     set_target_properties(TSALab_Tests PROPERTIES OUTPUT_NAME "TSALab_TestSuite")
+    add_dependencies(TSALab_Tests tsalab_sample_plugin)
+    target_compile_definitions(TSALab_Tests PRIVATE TSALAB_SAMPLE_PLUGIN="$<TARGET_FILE:tsalab_sample_plugin>")
     add_test(NAME TSALab_LabTests COMMAND TSALab_Tests)
 endif()

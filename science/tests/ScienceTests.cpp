@@ -149,6 +149,59 @@ bool testPlanar(int& passed)
         std::cout << "[PASS] S5: " << reports.size() << " benchmarks validés (A ≈ B ≈ C)" << std::endl;
         ++passed;
     }
+    // S6 : deux logiciels indépendants — MetDeDeplacement et OpenSees valident chaque benchmark et donnent les
+    // mêmes déplacements, réactions et efforts d'extrémité (ignoré, et signalé, si OpenSees est absent).
+    {
+        auto solvers = planar::createBuiltInSolvers();
+        TEST_CHECK(solvers.size() >= 2 && solvers[1]->name().find("OpenSees") != std::string::npos,
+                   "S6: OpenSees est le second solveur intégré");
+        planar::ISolver& mdd = *solvers[0];
+        planar::ISolver& ops = *solvers[1];
+        std::string why;
+        if (!ops.available(&why))
+        {
+            std::cout << "[PASS] S6: ignoré — " << why << std::endl;
+            ++passed;
+            return true;
+        }
+        int compared = 0;
+        for (const auto& b : validation::planarBenchmarks())
+        {
+            const auto rep = validation::runBenchmark(b, ops);
+            if (!rep.passed) std::cerr << validation::formatReport({ rep });
+            TEST_CHECK(rep.passed, "S6: OpenSees valide le benchmark " << b.id);
+            const planar::Output a = mdd.solve(b.input), o = ops.solve(b.input);
+            TEST_CHECK(a.success && o.success, "S6: deux calculs réussis (" << b.id << ")");
+            double scale = 1e-12, gap = 0.0;
+            for (const auto& d : a.displacements) scale = std::max({ scale, std::abs(d.ux), std::abs(d.uy) });
+            for (const auto& d : a.displacements)
+                for (const auto& e : o.displacements)
+                    if (d.node == e.node) gap = std::max({ gap, std::abs(d.ux - e.ux), std::abs(d.uy - e.uy) });
+            TEST_CHECK(gap <= 1e-6 * scale, "S6: déplacements identiques (" << b.id << ", écart " << gap / scale << ")");
+            double rScale = 1e-12, rGap = 0.0;
+            for (const auto& r : a.reactions) rScale = std::max({ rScale, std::abs(r.fx), std::abs(r.fy), std::abs(r.mz) });
+            for (const auto& r : a.reactions)
+                for (const auto& q : o.reactions)
+                    if (r.node == q.node) rGap = std::max({ rGap, std::abs(r.fx - q.fx), std::abs(r.fy - q.fy), std::abs(r.mz - q.mz) });
+            TEST_CHECK(rGap <= 1e-6 * rScale, "S6: réactions identiques (" << b.id << ")");
+            double fScale = 1e-12, fGap = 0.0;
+            for (const auto& f : a.elementForces) fScale = std::max({ fScale, std::abs(f.mzI), std::abs(f.mzJ), std::abs(f.fyI), std::abs(f.fxI) });
+            for (const auto& f : a.elementForces)
+                for (const auto& g : o.elementForces)
+                    if (f.element == g.element)
+                        fGap = std::max({ fGap, std::abs(f.fxI - g.fxI), std::abs(f.fyI - g.fyI), std::abs(f.mzI - g.mzI),
+                                          std::abs(f.fxJ - g.fxJ), std::abs(f.fyJ - g.fyJ), std::abs(f.mzJ - g.mzJ) });
+            if (fGap > 1e-6 * fScale)
+                for (const auto* set : { &a, &o })
+                    for (const auto& f : set->elementForces)
+                        std::cerr << (set == &a ? "MDD " : "OPS ") << f.element << " : " << f.fxI << ' ' << f.fyI << ' ' << f.mzI
+                                  << " | " << f.fxJ << ' ' << f.fyJ << ' ' << f.mzJ << '\n';
+            TEST_CHECK(fGap <= 1e-6 * fScale, "S6: efforts d'extrémité identiques (" << b.id << ", écart " << fGap / fScale << ")");
+            ++compared;
+        }
+        std::cout << "[PASS] S6: OpenSees " << ops.version() << " ≈ MetDeDeplacement sur " << compared << " benchmarks" << std::endl;
+        ++passed;
+    }
     return true;
 }
 
@@ -159,7 +212,7 @@ int main()
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif
-    constexpr int kExpected = 5;
+    constexpr int kExpected = 6;
     int passed = 0;
     const bool ok = testSolvers(passed) && testPlanar(passed);
     std::cout << "\nRESULTS: " << passed << " / " << kExpected << " tests passed" << (ok ? " successfully!" : " (FAILURE)") << std::endl;

@@ -1,5 +1,6 @@
 // tsalab-bench : exécute le banc de validation TSALab sur tous les solveurs d'ossatures planes.
-// Application console sans Qt (cœur scientifique seul) ; code de sortie 1 si un benchmark échoue.
+// Application console sans Qt (cœur scientifique seul) ; code de sortie 1 si un benchmark échoue (un solveur
+// indisponible sur le poste, ex. OpenSees absent, est ignoré et signalé).
 #include "tsalab/planar/PlanarSolvers.h"
 #include "tsalab/validation/PlanarBenchmarks.h"
 
@@ -24,6 +25,6 @@ int main()
     std::cout << "TSALab — banc de validation des solveurs d'ossatures planes\n\n"
               << tsalab::validation::formatReport(reports);
     for (const auto& r : reports)
-        if (!r.passed) return 1;
+        if (!r.passed && !r.skipped) return 1;
     return 0;
 }

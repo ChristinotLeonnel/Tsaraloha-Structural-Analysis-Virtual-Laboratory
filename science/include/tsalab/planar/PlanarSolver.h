@@ -237,6 +237,12 @@ public:
     virtual Output solve(const Input& input) = 0;
     virtual void cancel() {}
     virtual Features features() const { return {}; }
+    /// Solveur utilisable sur ce poste (ex. exécutable externe présent) ; *why reçoit la raison sinon.
+    virtual bool available(std::string* why = nullptr) const
+    {
+        (void)why;
+        return true;
+    }
 };
 
 } // namespace tsalab::planar

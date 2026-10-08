@@ -12,6 +12,8 @@
 // (diagrammes 2D), Recherche (SOLVER LAB). Docks : explorateur, propriétés, console, résultats (affichage
 // dans le viewport), données d'analyse (K globale, K·U = F, DDL). Le calcul est piloté par le contrôleur
 // d'analyse de la session (TSA::Analysis::AnalysisController), le même que dans TSA.
+// Assistant IA (dock partagé avec TSA) : lit le modèle et les résultats, propose des Blueprints (script de
+// commandes) ouverts dans l'éditeur après acceptation. Plugins : chargés au démarrage (EcosystemApplication).
 
 #include <QMainWindow>
 
@@ -30,8 +32,14 @@ namespace TSA::Viewer
 {
 class SelectionManager;
 }
+namespace TSA::AI
+{
+class AIOrchestrator;
+}
 namespace TSA::UI
 {
+class AICoEngineeringDock;
+class AIRuntimeDialog;
 class AnalysisDataDock;
 class AnalysisEngineOptionsRegistry;
 class AnalysisManagerPanel;
@@ -70,6 +78,8 @@ private:
     void createActions();
     void createMenus();
     void createStatusBar();
+    void createAssistant();
+    void showPlugins();
 
     void newProject();
     void openProject();
@@ -104,6 +114,9 @@ private:
     SolverLabPage* m_solverLab = nullptr;
     TSA::UI::ResultsDockWidget* m_resultsDock = nullptr;
     TSA::UI::AnalysisDataDock* m_dataDock = nullptr;
+    TSA::AI::AIOrchestrator* m_ai = nullptr;
+    TSA::UI::AICoEngineeringDock* m_aiDock = nullptr;
+    TSA::UI::AIRuntimeDialog* m_aiDialog = nullptr;
     TSA::UI::ModelTreeWidget* m_tree = nullptr;
     TSA::UI::PropertyPanel* m_properties = nullptr;
     TSA::UI::LogConsoleDock* m_console = nullptr;

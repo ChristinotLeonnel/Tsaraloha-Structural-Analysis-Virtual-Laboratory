@@ -19,5 +19,10 @@ Résultats (diagrammes 2D ; déformée dans le viewport via le dock Résultats),
 Réglages par défaut d'un projet sans réglages : Custom2D, plan du modèle, système exporté (non écrits dans le
 modèle tant que l'utilisateur ne les modifie pas). Vérifié en GUI 2026-10-08 (exemple Portique plan).
 
+## Phase 8 (2026-10-08)
+Status: IMPLEMENTED — science/ : OpenSeesPlanarSolver (C++ pur, processus OpenSees) + pont commun MddBridge ; le
+banc ignore un solveur indisponible. Application : assistant IA, débogueur Blueprint, plugins (Aide ▸ Plugins chargés).
+
 ## Tests
-Application 4/4 (exemples, .tsalab / import .tsa, Blueprints, analyse + SOLVER LAB) ; science 5/5 ; banc 7/7 (2026-10-08).
+Application 5/5 (exemples, .tsalab / import .tsa, Blueprints, analyse + SOLVER LAB, plugin) ; science 6/6 ; banc 14/14
+(MetDeDeplacement et OpenSees) (2026-10-08).

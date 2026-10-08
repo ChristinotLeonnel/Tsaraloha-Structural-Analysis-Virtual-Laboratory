@@ -232,6 +232,12 @@ BenchmarkReport runBenchmark(const PlanarBenchmark& benchmark, ISolver& solver)
     rep.id = benchmark.id;
     rep.title = benchmark.title;
     rep.solver = solver.name();
+    if (std::string why; !solver.available(&why))
+    {
+        rep.skipped = true;
+        rep.message = why;
+        return rep;
+    }
 
     Input input = benchmark.input;
     input.options.exportSystem = solver.features().linearSystem;
@@ -276,9 +282,15 @@ std::string formatReport(const std::vector<BenchmarkReport>& reports)
 {
     std::ostringstream o;
     o << std::setprecision(6);
-    int ok = 0;
+    int ok = 0, skipped = 0;
     for (const auto& r : reports)
     {
+        if (r.skipped)
+        {
+            o << "[IGNORÉ] " << r.title << " — " << r.solver << " : " << r.message << "\n";
+            ++skipped;
+            continue;
+        }
         o << (r.passed ? "[OK]   " : "[ÉCHEC] ") << r.title << " — " << r.solver << "\n";
         if (!r.solved)
         {
@@ -294,7 +306,9 @@ std::string formatReport(const std::vector<BenchmarkReport>& reports)
               << r.crossDeviation << std::defaultfloat << "\n";
         ok += r.passed ? 1 : 0;
     }
-    o << ok << " / " << reports.size() << " benchmark(s) validé(s)\n";
+    o << ok << " / " << reports.size() - static_cast<std::size_t>(skipped) << " benchmark(s) validé(s)";
+    if (skipped) o << " (" << skipped << " ignoré(s) : solveur indisponible)";
+    o << "\n";
     return o.str();
 }
 

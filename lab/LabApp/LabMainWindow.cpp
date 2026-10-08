@@ -5,6 +5,7 @@
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
+#include "AI/Core/AIOrchestrator.h"
 #include "Analysis/AnalysisController.h"
 #include "Analysis/Engine/AnalysisModel.h"
 #include "Analysis/ResultsModel.h"
@@ -12,9 +13,12 @@
 #include "Automation/CommandRegistry.h"
 #include "IO/TSAFile.h"
 #include "Model/Model.h"
+#include "Plugins/PluginManager.h"
 #include "Project/ProjectManager.h"
 #include "Project/ProjectSession.h"
 #include "Project/RecentProjects.h"
+#include "UI/AI/AICoEngineeringDock.h"
+#include "UI/AI/AIRuntimeDialog.h"
 #include "UI/Analysis/AnalysisEngineOptions.h"
 #include "UI/Analysis/AnalysisManagerPanel.h"
 #include "UI/Blueprint/BlueprintEditor.h"
@@ -59,7 +63,7 @@ const char* kStateKey = "LabMainWindow/state";
 const char* kGeometryKey = "LabMainWindow/geometry";
 /// Version de la disposition des panneaux : à incrémenter quand les docks / barres changent. Une disposition
 /// mémorisée d'une autre version est ignorée (elle pourrait masquer des panneaux ou faire flotter une barre).
-constexpr int kLayoutVersion = 4;
+constexpr int kLayoutVersion = 5;
 
 QSettings labSettings()
 {
@@ -81,6 +85,7 @@ LabMainWindow::LabMainWindow(QWidget* parent)
 
     createWorkspaces();
     createDocks();
+    createAssistant();
     createActions();
     createMenus();
     createStatusBar();
@@ -233,6 +238,78 @@ void LabMainWindow::createDocks()
     m_console->raise();
 }
 
+void LabMainWindow::createAssistant()
+{
+    // Assistant de co-ingénierie (composants partagés avec TSA) : sources = modèle, résultats et sélection.
+    m_ai = new TSA::AI::AIOrchestrator(this);
+    m_ai->setSourcesProvider([this] {
+        TSA::AI::EngineeringSources src;
+        src.model = &m_session->model();
+        const auto results = m_session->analysis().results();
+        src.results = results.get();
+        src.resultsUpToDate = m_session->analysis().resultsUpToDate();
+        const auto& pm = m_session->project();
+        src.projectName = pm.hasFilePath() ? QFileInfo(pm.currentFilePath()).completeBaseName() : tr("Nouveau modèle");
+        const auto sel = m_selection->selectedElements();
+        auto add = [&](const QString& type, const std::set<int>& ids) {
+            for (int id : ids)
+                if (src.selection.size() < 20) src.selection.push_back({ type, id });
+        };
+        add("beam", sel.beams);
+        add("column", sel.columns);
+        add("node", sel.nodes);
+        return src;
+    });
+    m_aiDock = new TSA::UI::AICoEngineeringDock(m_ai, this);
+    m_aiDock->setObjectName("LabAssistant");
+    addDockWidget(Qt::RightDockWidgetArea, m_aiDock);
+    m_aiDock->hide();
+    auto openConfig = [this] {
+        if (!m_aiDialog) m_aiDialog = new TSA::UI::AIRuntimeDialog(m_ai, this);
+        m_aiDialog->show();
+        m_aiDialog->raise();
+    };
+    connect(m_aiDock, &TSA::UI::AICoEngineeringDock::configureRequested, this, openConfig);
+    // Blueprint proposé par l'IA et accepté : ouvert dans l'éditeur (l'ingénieur l'exécute ou le débogue).
+    connect(m_ai, &TSA::AI::AIOrchestrator::blueprintAccepted, this, [this](const QString& title, const QString& script) {
+        QString error;
+        if (!m_blueprint->importScript(script, &error))
+        {
+            log(tr("Blueprint de l'IA « %1 » refusé : %2").arg(title, error), QStringLiteral("ERROR"));
+            return;
+        }
+        m_blueprint->graph().name = title.toStdString();
+        m_workspaces->setCurrentWidget(m_blueprint);
+        log(tr("Blueprint proposé par l'IA ouvert : « %1 » (Exécuter ou Déboguer pour l'appliquer).").arg(title));
+    });
+    connect(m_ai, &TSA::AI::AIOrchestrator::runAnalysisRequested, this, [this] {
+        m_workspaces->setCurrentWidget(m_analysisPanel);
+        m_analysisPanel->run();
+    });
+    connect(m_ai, &TSA::AI::AIOrchestrator::modelChanged, this, [this] {
+        updateHistoryActions();
+        m_view->update();
+    });
+}
+
+void LabMainWindow::showPlugins()
+{
+    const auto& list = TSA::Plugins::PluginManager::instance().plugins();
+    QString text = tr("<p>Dossier : <code>%1</code></p>").arg(QDir::toNativeSeparators(TSA::Plugins::PluginManager::defaultDirectory()).toHtmlEscaped());
+    if (list.empty()) text += tr("<p>Aucun plugin chargé.</p>");
+    for (const auto& p : list)
+    {
+        QStringList items;
+        for (const auto& c : p.commands) items << QString::fromStdString(c);
+        for (const auto& n : p.nodes) items << QString::fromStdString(n);
+        text += p.loaded ? tr("<p><b>%1</b> %2 — %3<br>%4</p>")
+                               .arg(QString::fromStdString(p.info.name).toHtmlEscaped(), QString::fromStdString(p.info.version).toHtmlEscaped(),
+                                    QString::fromStdString(p.info.description).toHtmlEscaped(), items.join(QStringLiteral(", ")).toHtmlEscaped())
+                         : tr("<p><b>Refusé</b> : %1<br>%2</p>").arg(QDir::toNativeSeparators(p.path).toHtmlEscaped(), p.error.toHtmlEscaped());
+    }
+    QMessageBox::information(this, tr("Plugins"), text);
+}
+
 void LabMainWindow::createActions()
 {
     m_actNew = new QAction(QIcon(":/icons/file_new.svg"), tr("&Nouveau modèle"), this);
@@ -313,7 +390,8 @@ void LabMainWindow::createMenus()
     view->addSeparator();
     QMenu* panels = view->addMenu(tr("&Panneaux"));
     for (QDockWidget* d : { m_treeDock, m_propertiesDock, static_cast<QDockWidget*>(m_console),
-                            static_cast<QDockWidget*>(m_resultsDock), static_cast<QDockWidget*>(m_dataDock) })
+                            static_cast<QDockWidget*>(m_resultsDock), static_cast<QDockWidget*>(m_dataDock),
+                            static_cast<QDockWidget*>(m_aiDock) })
         panels->addAction(d->toggleViewAction());
     view->addAction(tr("Disposition par défaut"), this, [this] { restoreState(m_defaultLayout); });
     view->addAction(tr("Thème clair / sombre"), this, [] { TSA::UI::ThemeManager::instance().toggleTheme(); });
@@ -345,9 +423,32 @@ void LabMainWindow::createMenus()
         m_blueprint->newBlueprint();
         m_workspaces->setCurrentWidget(m_blueprint);
     });
-    QAction* runBp = bp->addAction(tr("▶ Exécuter le Blueprint"), this, [this] { m_blueprint->run(); });
+    QAction* runBp = bp->addAction(tr("▶ Exécuter le Blueprint"), this, [this] {
+        m_workspaces->setCurrentWidget(m_blueprint);
+        m_blueprint->run();
+    });
     runBp->setShortcut(QKeySequence(Qt::Key_F5));
     bp->addAction(tr("Valider"), this, [this] { m_blueprint->validate(); });
+    bp->addSeparator();
+    QAction* debugBp = bp->addAction(tr("Déboguer"), this, [this] {
+        m_workspaces->setCurrentWidget(m_blueprint);
+        m_blueprint->debug();
+    });
+    debugBp->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
+    QAction* stepBp = bp->addAction(tr("Pas à pas"), this, [this] {
+        m_workspaces->setCurrentWidget(m_blueprint);
+        m_blueprint->step();
+    });
+    stepBp->setShortcut(QKeySequence(Qt::Key_F10));
+    QAction* continueBp = bp->addAction(tr("Continuer"), this, [this] { m_blueprint->continueExecution(); });
+    continueBp->setShortcut(QKeySequence(Qt::Key_F8));
+    bp->addAction(tr("Arrêter l'exécution"), this, [this] { m_blueprint->stop(); });
+    bp->addAction(tr("Point d'arrêt sur le nœud sélectionné"), this, [this] {
+        m_blueprint->toggleBreakpoint(m_blueprint->selectedNode());
+    });
+    bp->addSeparator();
+    bp->addAction(tr("Annuler (graphe)"), this, [this] { m_blueprint->undo(); });
+    bp->addAction(tr("Rétablir (graphe)"), this, [this] { m_blueprint->redo(); });
     QMenu* bpExamples = bp->addMenu(tr("Exemples"));
     for (const auto& ex : TSALab::Research::BlueprintExamples::catalog())
     {
@@ -388,8 +489,21 @@ void LabMainWindow::createMenus()
     bar->addSeparator();
     bar->addAction(runAnalysis);
 
+    // --- Assistant IA
+    QMenu* ai = menuBar()->addMenu(tr("&IA"));
+    QAction* assistant = m_aiDock->toggleViewAction();
+    assistant->setText(tr("Assistant IA"));
+    assistant->setShortcut(QKeySequence("Ctrl+Shift+I"));
+    ai->addAction(assistant);
+    ai->addAction(tr("Configuration IA…"), this, [this] {
+        if (!m_aiDialog) m_aiDialog = new TSA::UI::AIRuntimeDialog(m_ai, this);
+        m_aiDialog->show();
+        m_aiDialog->raise();
+    });
+
     // --- Aide
     QMenu* help = menuBar()->addMenu(tr("&Aide"));
+    help->addAction(tr("Plugins chargés…"), this, &LabMainWindow::showPlugins);
     help->addAction(tr("À propos de %1").arg(TSA::Product::name()), this, [this] {
         QMessageBox::about(this, tr("À propos de %1").arg(TSA::Product::name()),
                            tr("<h3>%1 %2</h3><p>%3</p>%4")

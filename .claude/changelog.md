@@ -1,5 +1,14 @@
 # Changelog — TSALab
 
+## 2026-10-08 (phase 8 : OpenSees dans science/, IA, débogueur, plugins)
+
+### Added
+- science/ : OpenSeesPlanarSolver (script Tcl 2D, processus sans fenêtre, nœud fictif pour une structure sans DDL
+  libre), MddBridge (chargement et post-traitement des barres communs), ISolver::available, rapports « ignoré » ;
+  test S6 (OpenSees ≈ MetDeDeplacement sur 7 benchmarks) ; banc 14/14.
+- Application : assistant IA (dock, menu IA), débogueur et historique Blueprint (menu Blueprint), Aide ▸ Plugins chargés.
+- plugins/sample : plugin d'exemple (commande composée sample.portal, nœud sample.golden) ; test L8 (5/5).
+
 ## 2026-10-08 (espaces Analyse / Résultats / Recherche — ADR-024 phase 7)
 
 ### Added

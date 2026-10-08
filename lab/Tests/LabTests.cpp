@@ -1,5 +1,5 @@
 // Tests de l'application TSALab (exécutable TSALab_TestSuite) : exemples, format .tsalab et import des
-// modèles TSA, Blueprints, analyse (contrôleur partagé) et SOLVER LAB. Le cœur scientifique a ses propres tests (science/tests, tsalab_science_tests) ; la base
+// modèles TSA, Blueprints, analyse (contrôleur partagé), SOLVER LAB et plugins (DLL d'exemple). Le cœur scientifique a ses propres tests (science/tests, tsalab_science_tests) ; la base
 // commune (modèle, viewport, IO…) est couverte par les 212 tests de TSA.
 #include "Analysis/AnalysisController.h"
 #include "Analysis/ResultsModel.h"
@@ -12,10 +12,12 @@
 #include "Blueprint/BlueprintRuntime.h"
 #include "Model/Beam.h"
 #include "Model/Load/LoadManager.h"
+#include "Plugins/PluginManager.h"
 #include "Project/ProjectSession.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 #include "Research/Solver/SolverExperiment.h"
+#include "Blueprint/BlueprintScript.h"
 
 #include <QApplication>
 #include <QTemporaryDir>
@@ -41,7 +43,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 4;
+constexpr int kLabTests = 5;
 
 bool runSuite_Lab(int& passed)
 {
@@ -178,6 +180,53 @@ bool runSuite_Lab(int& passed)
         TEST_CHECK(!TSA::Automation::executeCommandLine(reg, space, "analysis.run engine=custom2d axis=plan").ok,
                    "Test L7: portique spatial refusé en 2D (modèle non plan)");
         std::cout << "[PASS] Test L7: analyse et SOLVER LAB sur les exemples" << std::endl;
+        ++passed;
+    }
+    // TEST L8 : plugin d'exemple (DLL) — commande composée (console, Blueprint, IA) et nœud pur
+    {
+        auto& plugins = TSA::Plugins::PluginManager::instance();
+        QString error;
+        TEST_CHECK(plugins.loadFile(QStringLiteral(TSALAB_SAMPLE_PLUGIN), &error), "Test L8: plugin chargé (" << error.toStdString() << ")");
+        TEST_CHECK(plugins.loadFile(QStringLiteral(TSALAB_SAMPLE_PLUGIN)) && plugins.plugins().size() == 1, "Test L8: chargé une seule fois");
+        const auto& rec = plugins.plugins().front();
+        TEST_CHECK(rec.info.id == "tsalab.sample" && rec.commands.size() == 1 && rec.nodes.size() == 1 && !rec.log.isEmpty(),
+                   "Test L8: informations, commande, nœud et journal du plugin");
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        const auto& lib = TSA::Blueprint::NodeLibrary::standard();
+        TEST_CHECK(reg.find("sample.portal") && lib.find("cmd.sample.portal") && lib.find("sample.golden"),
+                   "Test L8: commande au registre, nœud de commande et nœud pur dans la bibliothèque");
+
+        // Commande composée : chaque étape garde son entrée Annuler.
+        TSA::Project::ProjectSession session;
+        const auto r = TSA::Automation::executeCommandLine(reg, session, "sample.portal span=8 height=4");
+        TEST_CHECK(r.ok && session.model().nodes().size() == 4 && session.model().beams().size() == 3
+                       && session.model().loadManager().memberLoads().size() == 1,
+                   "Test L8: portique du plugin (" << r.message << ")");
+        TEST_CHECK(session.model().getNode(3) && approxEqual(session.model().getNode(3)->x(), 8.0), "Test L8: portée imposée");
+        int undo = 0;
+        while (session.undo()) ++undo;
+        TEST_CHECK(undo >= 8 && session.model().nodes().empty(), "Test L8: étapes annulables une par une");
+
+        // Blueprint : script → nœud de commande du plugin ; nœud pur du plugin relié à « Afficher ».
+        TSA::Blueprint::Graph g;
+        std::string why;
+        TEST_CHECK(TSA::Blueprint::fromCommandScript("p = sample.portal span=5\nquery.model_summary", lib, reg, g, &why),
+                   "Test L8: commande du plugin dans un script (" << why << ")");
+        const int s = g.addNode("event.start", 0, 300);
+        const int golden = g.addNode("sample.golden");
+        g.setValue(golden, "x", 2.0);
+        const int print = g.addNode("debug.print");
+        TEST_CHECK(lib.connect(g, { s, "then", print, "exec" }, &why) && lib.connect(g, { golden, "y", print, "value" }, &why),
+                   "Test L8: liens vers le nœud du plugin");
+        TSA::Project::ProjectSession bp;
+        const auto report = TSA::Blueprint::Runner(lib, g, &bp).run();
+        bool goldenPrinted = false;
+        for (const auto& line : report.log) goldenPrinted |= line.rfind("3.236", 0) == 0;
+        TEST_CHECK(report.ok && goldenPrinted && bp.model().nodes().size() == 4, "Test L8: Blueprint exécuté (portique + 2φ affiché)");
+
+        TEST_CHECK(!plugins.loadFile(QStringLiteral("C:/nulle/part/plugin.dll"), &error) && !error.isEmpty(),
+                   "Test L8: DLL introuvable refusée avec un message");
+        std::cout << "[PASS] Test L8: plugin d'exemple (commande composée, nœud pur)" << std::endl;
         ++passed;
     }
     return true;

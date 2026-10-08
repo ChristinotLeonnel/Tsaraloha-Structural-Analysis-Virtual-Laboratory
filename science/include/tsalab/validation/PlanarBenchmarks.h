@@ -56,6 +56,7 @@ struct BenchmarkReport
     std::string title;
     std::string solver;
     bool solved = false;
+    bool skipped = false;               ///< solveur indisponible sur ce poste (ex. OpenSees absent) : ni validé ni en échec
     std::string message;
     std::vector<CheckResult> checks;
     bool crossChecked = false;          ///< système exporté et résolu à nouveau
