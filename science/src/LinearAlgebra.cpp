@@ -1,4 +1,4 @@
-#include "LinearAlgebra.h"
+#include "tsalab/numerics/LinearAlgebra.h"
 
 #include <algorithm>
 #include <chrono>
@@ -6,7 +6,7 @@
 #include <limits>
 #include <numeric>
 
-namespace TSALab::Research
+namespace tsalab::numerics
 {
 
 namespace
@@ -558,4 +558,4 @@ double conditionNumber(const Matrix& a)
     return hi / lo;
 }
 
-} // namespace TSALab::Research
+} // namespace tsalab::numerics

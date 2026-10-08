@@ -48,32 +48,4 @@ bool buildSolverExperiment(const TSA::Analysis::ResultsModel& results, SolverExp
     return true;
 }
 
-SolverExperimentInput makeSolverExperiment(Matrix K, Vector reference)
-{
-    SolverExperimentInput in;
-    in.f = LinAlg::multiply(K, reference);
-    in.K = std::move(K);
-    in.reference = std::move(reference);
-    for (int e = 0; e < in.K.rows; ++e) in.labels.push_back("eq" + std::to_string(e));
-    return in;
-}
-
-SolverRun runSolver(const SolverExperimentInput& input, SolverMethod method, const SolverSettings& base)
-{
-    SolverRun run;
-    SolverSettings settings = base;
-    settings.method = method;
-    run.report = solve(input.K, input.f, run.x, settings);
-    if (!run.report.success) return run;
-
-    double maxRef = 0.0, maxDiff = 0.0;
-    for (std::size_t i = 0; i < run.x.size() && i < input.reference.size(); ++i)
-    {
-        maxRef = std::max(maxRef, std::abs(input.reference[i]));
-        maxDiff = std::max(maxDiff, std::abs(run.x[i] - input.reference[i]));
-    }
-    run.deviationFromReference = maxRef > 0.0 ? maxDiff / maxRef : maxDiff;
-    return run;
-}
-
 } // namespace TSALab::Research

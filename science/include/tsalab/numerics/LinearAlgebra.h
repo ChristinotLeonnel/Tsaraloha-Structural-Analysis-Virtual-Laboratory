@@ -1,22 +1,21 @@
 #pragma once
 
-// Algèbre linéaire dense du laboratoire (TSALab::Research).
+// TSALab — algèbre linéaire dense du laboratoire (cœur scientifique, C++ pur).
 //
 // Outils volontairement simples, lisibles et instrumentés : le laboratoire montre ce que fait un
 // solveur (pivots, résidus, itérations, conditionnement), il ne cherche pas la performance d'un
 // solveur de production (OpenSees reste le moteur des grands modèles).
-// Stockage : TSA::Analysis::DenseMatrix (ligne par ligne), partagé avec les résultats OpenSees.
+// Stockage : tsalab::numerics::DenseMatrix (ligne par ligne).
 
-#include "Analysis/AnalysisTypes.h"
+#include "tsalab/numerics/Matrix.h"
 
 #include <string>
 #include <vector>
 
-namespace TSALab::Research
+namespace tsalab::numerics
 {
 
-using Matrix = TSA::Analysis::DenseMatrix;
-using Vector = std::vector<double>;
+using Matrix = DenseMatrix;
 
 namespace LinAlg
 {
@@ -106,4 +105,4 @@ EigenResult generalizedEigen(const Matrix& K, const Matrix& M, int maxModes = 0)
 /// Conditionnement spectral λmax/λmin d'une matrice symétrique définie positive (∞ si singulière).
 double conditionNumber(const Matrix& a);
 
-} // namespace TSALab::Research
+} // namespace tsalab::numerics

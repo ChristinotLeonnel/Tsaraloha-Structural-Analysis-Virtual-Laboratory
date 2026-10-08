@@ -9,7 +9,9 @@ cmake_minimum_required(VERSION 3.20)
 #   TSALab_Widgets  : composants d'interface partagés (arbre, propriétés, console, synchronisation…)
 # Ce dépôt ne contient que ce qui est propre au laboratoire :
 #   product/   identité (nom, .tsalab, signature TSLB, QSettings, CLSID de l'extension Explorateur)
-#   lab/       Research (solveurs instrumentés, exemples, SOLVER LAB), LabUI, LabApp (fenêtre), Tests
+#   science/   cœur scientifique (C++ pur : numerics, solveurs plans, MetDeDeplacement, validation),
+#              utilisé aussi par TSA ; outil console tsalab-bench
+#   lab/       Research (exemples, adaptateur SOLVER LAB), LabUI, LabApp (fenêtre), Tests
 #   resources/ icônes et ressources Windows de TSALab
 project(TSALab VERSION 0.1.0 LANGUAGES CXX)
 
@@ -40,6 +42,9 @@ setup_external_dependencies()
 find_package(OpenCASCADE REQUIRED)
 message(STATUS "OpenCASCADE Version: ${OpenCASCADE_VERSION}")
 
+# Le cœur scientifique est celui de CE dépôt (science/), avec ses outils (tsalab-bench) et ses tests.
+set(TSALAB_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "Racine du dépôt TSALab (cœur scientifique)")
+set(TSALAB_SCIENCE_TOOLS ON CACHE BOOL "Compiler tsalab-bench et les tests du cœur scientifique")
 include("${TSA_ROOT_DIR}/cmake/TSAProduct.cmake")
 tsa_setup_compiler_launchers()
 
@@ -50,11 +55,10 @@ set(LAB_PRODUCT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/product")
 tsaraloha_add_shared_libraries(PREFIX TSALab PRODUCT_DIR ${LAB_PRODUCT_DIR} OVERLAY_DIRS ${LAB_DIR})
 
 # =============================================================================
-# Recherche (sans interface) : solveurs instrumentés, exemples, expérience SOLVER LAB — testée
+# Recherche appliquée au modèle partagé : exemples (modèles TSA), adaptateur SOLVER LAB (résultats d'un
+# calcul → problème linéaire du cœur scientifique). La science elle-même est dans science/ (sans Qt).
 # =============================================================================
 add_library(TSALab_Research OBJECT
-    ${LAB_DIR}/Research/Numerics/LinearAlgebra.h
-    ${LAB_DIR}/Research/Numerics/LinearAlgebra.cpp
     ${LAB_DIR}/Research/Examples/ExampleModels.h
     ${LAB_DIR}/Research/Examples/ExampleModels.cpp
     ${LAB_DIR}/Research/Solver/SolverExperiment.h
