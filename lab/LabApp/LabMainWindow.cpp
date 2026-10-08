@@ -1,6 +1,7 @@
 #include "LabMainWindow.h"
 
 #include "LabUI/LabStartPanel.h"
+#include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
 #include "App/ProductInfo.h"
@@ -10,6 +11,7 @@
 #include "Project/ProjectManager.h"
 #include "Project/ProjectSession.h"
 #include "Project/RecentProjects.h"
+#include "UI/Blueprint/BlueprintEditor.h"
 #include "UI/Common/SelectionSynchronizer.h"
 #include "UI/Dock/LogConsoleDock.h"
 #include "UI/ModelTree/ModelTreeWidget.h"
@@ -45,6 +47,9 @@ namespace
 {
 const char* kStateKey = "LabMainWindow/state";
 const char* kGeometryKey = "LabMainWindow/geometry";
+/// Version de la disposition des panneaux : à incrémenter quand les docks / barres changent. Une disposition
+/// mémorisée d'une autre version est ignorée (elle pourrait masquer des panneaux ou faire flotter une barre).
+constexpr int kLayoutVersion = 3;
 
 QSettings labSettings()
 {
@@ -78,11 +83,16 @@ LabMainWindow::LabMainWindow(QWidget* parent)
     connect(&m_session->project(), &TSA::Project::ProjectManager::modifiedChanged, this, &LabMainWindow::updateTitle);
     connect(m_view, &OccView::elementCreated, this, &LabMainWindow::updateHistoryActions);
     connect(m_console, &TSA::UI::LogConsoleDock::commandEntered, this, &LabMainWindow::runConsoleCommand);
+    connect(m_blueprint, &TSA::UI::BlueprintEditor::logMessage, this, [this](const QString& text, const QString& type) { log(text, type); });
+    connect(m_blueprint, &TSA::UI::BlueprintEditor::projectModified, this, [this] {
+        updateHistoryActions();
+        m_view->update();
+    });
 
     m_defaultLayout = saveState();
     QSettings s = labSettings();
     restoreGeometry(s.value(kGeometryKey).toByteArray());
-    restoreState(s.value(kStateKey).toByteArray());
+    if (!restoreState(s.value(kStateKey).toByteArray(), kLayoutVersion)) restoreState(m_defaultLayout);
 
     m_session->project().newProject(m_session->model(), &m_session->grids());
     m_tree->setGridManager(&m_session->grids());
@@ -118,6 +128,12 @@ void LabMainWindow::createWorkspaces()
     m_viewport = new TSA::UI::ViewportContainer(m_view, m_workspaces);
     m_viewport->setModel(&m_session->model());
     m_workspaces->addTab(m_viewport, QIcon(":/icons/view/view_3d.svg"), tr("Modèle"));
+
+    // Blueprint : programmation visuelle (éditeur partagé) exécutée sur le projet ouvert ; chaque commande
+    // du registre central est un nœud, avec ses entrées Annuler / Rétablir.
+    m_blueprint = new TSA::UI::BlueprintEditor(m_workspaces);
+    m_blueprint->setSession(m_session.get());
+    m_workspaces->addTab(m_blueprint, QIcon(":/icons/modeling/load_dist.svg"), tr("Blueprint"));
 
     setCentralWidget(m_workspaces);
 }
@@ -248,6 +264,28 @@ void LabMainWindow::createMenus()
         bar->addAction(a);
     }
     bar->addAction(fit);
+
+    // --- Blueprint
+    QMenu* bp = menuBar()->addMenu(tr("&Blueprint"));
+    bp->addAction(tr("Nouveau Blueprint"), this, [this] {
+        m_blueprint->newBlueprint();
+        m_workspaces->setCurrentWidget(m_blueprint);
+    });
+    QAction* runBp = bp->addAction(tr("▶ Exécuter le Blueprint"), this, [this] { m_blueprint->run(); });
+    runBp->setShortcut(QKeySequence(Qt::Key_F5));
+    bp->addAction(tr("Valider"), this, [this] { m_blueprint->validate(); });
+    QMenu* bpExamples = bp->addMenu(tr("Exemples"));
+    for (const auto& ex : TSALab::Research::BlueprintExamples::catalog())
+    {
+        const std::string id = ex.id;
+        QAction* a = bpExamples->addAction(QString::fromStdString(ex.title), this, [this, id] {
+            TSA::Blueprint::Graph g;
+            if (!TSALab::Research::BlueprintExamples::build(id, g)) return;
+            m_blueprint->setGraph(std::move(g));
+            m_workspaces->setCurrentWidget(m_blueprint);
+        });
+        a->setToolTip(QString::fromStdString(ex.description));
+    }
 
     // --- Aide
     QMenu* help = menuBar()->addMenu(tr("&Aide"));
@@ -467,7 +505,7 @@ void LabMainWindow::closeEvent(QCloseEvent* event)
     }
     QSettings s = labSettings();
     s.setValue(kGeometryKey, saveGeometry());
-    s.setValue(kStateKey, saveState());
+    s.setValue(kStateKey, saveState(kLayoutVersion));
     event->accept();
 }
 

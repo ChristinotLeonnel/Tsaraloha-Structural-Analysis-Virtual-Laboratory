@@ -140,8 +140,7 @@ std::vector<PlanarBenchmark> buildCatalog()
         };
         list.push_back(std::move(b));
     }
-    {   // Poutre bi-encastrée (nœud à mi-portée : une barre unique encastrée aux deux bouts n'aurait aucun
-        // DDL libre, cas refusé par MetDeDeplacement — limite connue, voir .claude/known-issues.md)
+    {   // Poutre bi-encastrée, nœud à mi-portée (flèche lue au nœud)
         const double L = 6.0;
         PlanarBenchmark b { "fixed-fixed-udl", "Poutre bi-encastrée — charge uniforme",
                             "Portée 6 m encastrée aux deux extrémités (nœud à mi-portée), q = 10 kN/m.", base(), {} };
@@ -153,6 +152,22 @@ std::vector<PlanarBenchmark> buildCatalog()
             { "moment à mi-portée", "qL²/24", q * L * L / 24, summary(1, [](const MemberSummary& s) { return s.Mj; }) },
             { "moment d'encastrement", "qL²/12", q * L * L / 12, Mz(1) },
             { "flèche à mi-portée", "−qL⁴/384EI", -q * std::pow(L, 4) / (384 * kEI), uy(2) },
+        };
+        list.push_back(std::move(b));
+    }
+    {   // Barre unique bi-encastrée : aucun DDL libre, solution = encastrement parfait (BUG-037)
+        const double L = 6.0;
+        PlanarBenchmark b { "fixed-fixed-single-bar", "Barre unique bi-encastrée — charge uniforme",
+                            "Une seule barre de 6 m encastrée aux deux bouts (aucun DDL libre), q = 10 kN/m.", base(), {} };
+        b.input.nodes = { node(1, 0, 0, true, true, true), node(2, L, 0, true, true, true) };
+        b.input.elements = { bar(1, 1, 2, L) };
+        b.input.memberLoads = { uniform(1, L, -q) };
+        b.checks = {
+            { "moment sur appui", "−qL²/12", -q * L * L / 12, summary(1, [](const MemberSummary& s) { return s.Mi; }) },
+            { "moment en travée", "qL²/24", q * L * L / 24, summary(1, [](const MemberSummary& s) { return s.MSpanExtremum; }) },
+            { "réaction verticale", "qL/2", q * L / 2, Ry(1) },
+            { "flèche maximale", "−qL⁴/384EI", -q * std::pow(L, 4) / (384 * kEI),
+              summary(1, [](const MemberSummary& s) { return s.deflectionMax; }) },
         };
         list.push_back(std::move(b));
     }

@@ -5,6 +5,12 @@
 #include "IO/TSAFile.h"
 #include "IO/TSAFileFormat.h"
 #include "Model/Model.h"
+#include "Blueprint/BlueprintFile.h"
+#include "Blueprint/BlueprintRuntime.h"
+#include "Model/Beam.h"
+#include "Model/Load/LoadManager.h"
+#include "Project/ProjectSession.h"
+#include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
 #include <QApplication>
@@ -31,7 +37,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 2;
+constexpr int kLabTests = 3;
 
 bool runSuite_Lab(int& passed)
 {
@@ -86,6 +92,45 @@ bool runSuite_Lab(int& passed)
         TSA::Model::Model rejected;
         TEST_CHECK(!TSA::IO::TSAProjectIO::loadFromFile(tsaPath, rejected, nullptr), "Test L5: signature inconnue refusée");
         std::cout << "[PASS] Test L5: import des modèles TSA (.tsa) et refus des signatures inconnues" << std::endl;
+        ++passed;
+    }
+    // TEST L6 : Blueprints d'exemple — exécutés sur un vrai projet, après aller-retour .tsbp
+    {
+        const auto& lib = TSA::Blueprint::NodeLibrary::standard();
+        QTemporaryDir dir;
+        for (const auto& ex : BlueprintExamples::catalog())
+        {
+            TSA::Blueprint::Graph g;
+            TEST_CHECK(BlueprintExamples::build(ex.id, g), "Test L6: exemple construit (" << ex.id << ")");
+            TEST_CHECK(lib.validate(g).empty(), "Test L6: exemple valide (" << ex.id << ")");
+            const QString path = dir.filePath(QString::fromStdString(ex.id) + ".tsbp");
+            TSA::Blueprint::Graph back;
+            TEST_CHECK(TSA::Blueprint::saveFile(g, path) && TSA::Blueprint::loadFile(path, back), "Test L6: aller-retour .tsbp");
+
+            TSA::Project::ProjectSession session;
+            const auto r = TSA::Blueprint::Runner(lib, back, &session).run();
+            TEST_CHECK(r.ok, "Test L6: exécution de " << ex.id << " (" << r.message << ")");
+            const auto& m = session.model();
+            if (ex.id == "parametric-portal")
+            {
+                int columns = 0, beams = 0;
+                for (const auto& [id, b] : m.beams()) (b.role() == TSA::Model::BarRole::Column ? columns : beams) += 1;
+                TEST_CHECK(m.nodes().size() == 4 && columns == 2 && beams == 1 && m.loadManager().memberLoads().size() == 1,
+                           "Test L6: portique (4 nœuds, 2 poteaux, 1 poutre, 1 charge)");
+                TEST_CHECK(m.getNode(3) && approxEqual(m.getNode(3)->x(), 6.0) && approxEqual(m.getNode(3)->z(), 3.0),
+                           "Test L6: géométrie issue des paramètres (portée 6, hauteur 3)");
+                TSA::Project::ProjectSession wide;
+                TEST_CHECK(TSA::Blueprint::Runner(lib, back, &wide).run({ { "portée", 9.0 } }).ok
+                               && approxEqual(wide.model().getNode(3)->x(), 9.0),
+                           "Test L6: reconstruction paramétrique (portée 9 m)");
+            }
+            else if (ex.id == "node-row")
+                TEST_CHECK(m.nodes().size() == 5 && approxEqual(m.getNode(5)->x(), 10.0), "Test L6: 5 nœuds au pas de 2,5 m");
+            else if (ex.id == "validation-bench")
+                TEST_CHECK(!r.log.empty() && r.log.back().find("benchmark(s) validé(s)") != std::string::npos,
+                           "Test L6: rapport du banc de validation dans le journal");
+        }
+        std::cout << "[PASS] Test L6: " << BlueprintExamples::catalog().size() << " Blueprints d'exemple exécutés" << std::endl;
         ++passed;
     }
     return true;

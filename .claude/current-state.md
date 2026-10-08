@@ -14,8 +14,9 @@ Status: IMPLEMENTED — numerics, API tsalab::planar, MetDeDeplacement (export K
 (analytique + validation croisée), tsalab-bench, 5 tests sans Qt. Utilisé par TSA (moteur custom2d).
 
 ## Espaces de travail
-Status: PARTIAL — Accueil, Modèle. MISSING : Blueprint, Analysis, Results, Research (SolverLabPage existe mais
+Status: PARTIAL — Accueil, Modèle, Blueprint (vérifié : exemple portique exécuté, console et arbre à jour).
+MISSING : Analysis, Results, Research (SolverLabPage existe mais
 n'est pas encore affichée : il faut d'abord un Analysis Manager partagé pour calculer dans TSALab).
 
 ## Tests
-Application 2/2 (exemples, format .tsalab / import .tsa) ; science 5/5 ; banc 6/6 (2026-10-08).
+Application 3/3 (exemples, .tsalab / import .tsa, Blueprints) ; science 5/5 ; banc 7/7 (2026-10-08).

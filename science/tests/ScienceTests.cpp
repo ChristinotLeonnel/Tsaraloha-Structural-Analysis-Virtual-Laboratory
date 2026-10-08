@@ -142,9 +142,10 @@ bool testPlanar(int& passed)
         {
             if (!r.passed) std::cerr << text;
             TEST_CHECK(r.passed, "S5: benchmark " << r.id);
-            TEST_CHECK(r.crossChecked, "S5: validation croisée effectuée (" << r.id << ")");
+            // Sans DDL libre, il n'y a pas de système à résoudre : pas de validation croisée.
+            TEST_CHECK(r.crossChecked || r.id == "fixed-fixed-single-bar", "S5: validation croisée effectuée (" << r.id << ")");
         }
-        TEST_CHECK(reports.size() >= 6, "S5: au moins 6 benchmarks");
+        TEST_CHECK(reports.size() >= 7, "S5: au moins 7 benchmarks");
         std::cout << "[PASS] S5: " << reports.size() << " benchmarks validés (A ≈ B ≈ C)" << std::endl;
         ++passed;
     }

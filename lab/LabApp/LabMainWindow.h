@@ -7,8 +7,8 @@
 //   ProjectSession (modèle, commandes, grilles, fichier) · OccView + ViewportContainer (viewport,
 //   caméra, grilles, accrochage, sélection, outils de dessin) · ModelTreeWidget · PropertyPanel ·
 //   LogConsoleDock · SelectionSynchronizer.
-// Espaces de travail (onglets centraux) : Accueil, Modèle. Les espaces Blueprint, Analysis, Results et
-// Research s'ajoutent quand ils existent réellement.
+// Espaces de travail (onglets centraux) : Accueil, Modèle, Blueprint (programmation visuelle partagée).
+// Les espaces Analysis, Results et Research s'ajoutent quand ils existent réellement.
 
 #include <QMainWindow>
 
@@ -29,6 +29,7 @@ class SelectionManager;
 }
 namespace TSA::UI
 {
+class BlueprintEditor;
 class LogConsoleDock;
 class ModelTreeWidget;
 class PropertyPanel;
@@ -82,6 +83,7 @@ private:
     LabStartPanel* m_home = nullptr;
     OccView* m_view = nullptr;
     TSA::UI::ViewportContainer* m_viewport = nullptr;
+    TSA::UI::BlueprintEditor* m_blueprint = nullptr;
     TSA::UI::ModelTreeWidget* m_tree = nullptr;
     TSA::UI::PropertyPanel* m_properties = nullptr;
     TSA::UI::LogConsoleDock* m_console = nullptr;

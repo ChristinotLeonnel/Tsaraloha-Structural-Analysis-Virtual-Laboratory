@@ -61,6 +61,8 @@ tsaraloha_add_shared_libraries(PREFIX TSALab PRODUCT_DIR ${LAB_PRODUCT_DIR} OVER
 add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Examples/ExampleModels.h
     ${LAB_DIR}/Research/Examples/ExampleModels.cpp
+    ${LAB_DIR}/Research/Examples/BlueprintExamples.h
+    ${LAB_DIR}/Research/Examples/BlueprintExamples.cpp
     ${LAB_DIR}/Research/Solver/SolverExperiment.h
     ${LAB_DIR}/Research/Solver/SolverExperiment.cpp
 )

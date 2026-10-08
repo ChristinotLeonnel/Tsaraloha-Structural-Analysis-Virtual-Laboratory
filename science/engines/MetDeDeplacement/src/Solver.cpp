@@ -113,7 +113,10 @@ Result solve(const Model& model)
         for (int d = 0; d < 3; ++d)
             if (!fixed[n][d]) eq[n][d] = neq++;
     r.equations = neq;
-    if (neq == 0) return fail("Tous les degrés de liberté sont bloqués : rien à calculer.");
+    // Aucun DDL libre (ex. barre unique encastrée aux deux bouts) : U = 0, la solution est entièrement
+    // déterminée par les efforts d'encastrement parfait (BUG-037).
+    if (neq == 0)
+        r.log.push_back("Tous les degrés de liberté sont bloqués : déplacements nuls, efforts d'encastrement parfait.");
 
     int bw = 0;
     for (const auto& b : model.members)

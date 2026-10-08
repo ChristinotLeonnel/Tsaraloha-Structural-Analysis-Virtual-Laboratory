@@ -1,5 +1,16 @@
 # Changelog — TSALab
 
+## 2026-10-08 (espace Blueprint, BUG-037)
+
+### Added
+- Espace « Blueprint » (éditeur partagé de TSA), menu Blueprint (Nouveau, Exécuter F5, Valider, Exemples) ;
+  3 Blueprints d'exemple (portique paramétrique, rangée de nœuds, banc de validation) ; test L6 (3/3).
+- science/ : benchmark « barre unique bi-encastrée » (7/7).
+
+### Fixed
+- BUG-037 : MetDeDeplacement calcule une ossature sans DDL libre (U = 0, encastrement parfait).
+- Disposition des panneaux mémorisée versionnée (une ancienne disposition masquait l'explorateur et la console).
+
 ## 2026-10-08 (IDE scientifique et cœur scientifique — ADR-024 / ADR-L05, branche feature/scientific-ide)
 
 ### Changed
