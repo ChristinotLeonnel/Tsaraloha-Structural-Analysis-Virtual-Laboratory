@@ -2,7 +2,7 @@
 
 Last Updated: 2026-10-08. Feuille de route complète : ../TSA/docs/TSARALOHA_ARCHITECTURE.md (§4).
 
-- [ ] Fusion des branches feature/scientific-ide (TSALab) et feature/tsaraloha-shared-libs (TSA) ENSEMBLE.
+- [x] Fusion dans main (locale, 2026-10-08) avec feature/tsaraloha-shared-libs (TSA). Push : sur demande.
 - [x] Phase 6 — Blueprint (espace, exemples, tests). Reste : Annuler dans l'éditeur, débogueur, exécution en tâche de fond.
 - [x] Phase 7 — espaces Analyse (AnalysisManagerPanel), Résultats (diagrammes 2D), Recherche (SOLVER LAB), docks
       Résultats et Données d'analyse (K, K·U = F, DDL), menu Analyse (F9), réglages par défaut du laboratoire (2026-10-08).
