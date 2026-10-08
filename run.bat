@@ -7,9 +7,11 @@ setlocal
 ::   run.bat build\Release      -> idem (presets Visual Studio)
 
 set "TSA_DIR=%~dp0"
+:: SDK partages (OCCT, 3rdparty) : ceux de la base commune TSA (depot voisin), voir CMakeLists.txt
+if not defined TSA_ROOT_DIR set "TSA_ROOT_DIR=%~dp0..\TSA"
 set "QT_DIR=C:\Qt\6.11.2\msvc2022_64"
-set "OCCT_DIR=%TSA_DIR%opencascade-8.0.1-vc14-64"
-set "TP_DIR=%TSA_DIR%3rdparty-vc14-64"
+set "OCCT_DIR=%TSA_ROOT_DIR%\opencascade-8.0.1-vc14-64"
+set "TP_DIR=%TSA_ROOT_DIR%\3rdparty-vc14-64"
 
 :: Configuration des variables OCCT pour les shaders et ressources
 set "CSF_OCCTResourcePath=%OCCT_DIR%\src"

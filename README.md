@@ -47,6 +47,22 @@
 
 TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D interactive des bâtiments à étages, des halles industrielles, des fermes et treillis spatiaux, des structures haubanées et des systèmes de fondations selon les normes européennes (**Eurocodes**).
 
+> **Base technique commune avec TSA.** TSALab ne contient pas de copie du code de TSA : il compile directement les
+> sources du dépôt [TSA](https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis) (cloné à côté, `../TSA`).
+> Un bug corrigé dans TSA l'est donc aussi dans TSALab. Ce dépôt ne contient que ce qui est propre au laboratoire :
+> son identité (`product/`, format `.tsalab`), ses modules de recherche et ses espaces (`lab/`), ses icônes.
+
+### Ce que le laboratoire ajoute à TSA
+
+* **Start Center laboratoire** : nouveau modèle, ouverture des projets `.tsalab` et import des modèles TSA (`.tsa`,
+  jamais réécrits), exemples à solution analytique connue (console, poutres, portique, treillis, portique spatial).
+* **Rail des espaces** autour du workspace commun :
+  * **MODÈLE** — modélisation, calcul, résultats et note de calcul (identiques à TSA) ;
+  * **SOLVER LAB** — rejoue la résolution `K·U = F` du dernier calcul OpenSees (extraction ADVANCED) avec des
+    solveurs instrumentés (Gauss LU, Cholesky, gradient conjugué) : itérations, résidus, pivots (détection de
+    mécanisme), écart à OpenSees, conditionnement spectral, courbe de convergence.
+* **Suite de tests `lab`** (L1–L5) en plus des 212 tests communs.
+
 ---
 
 ## 🚀 Getting Started / Démarrage Rapide
@@ -63,23 +79,23 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
 
 ### <ins>1. Téléchargement du Dépôt</ins>
 
-Clonez le projet avec Git :
+Clonez **les deux dépôts côte à côte** (TSALab compile les sources de TSA) :
 
 ```powershell
+git clone https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis.git TSA
 git clone https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis-Virtual-Laboratory.git TSALab
 cd TSALab
 ```
 
+Un autre emplacement de TSA s'indique à CMake : `-DTSA_ROOT_DIR=<chemin>`. OpenCASCADE et les dépendances
+3rdparty sont celles du dépôt TSA (téléchargées une seule fois, dans `../TSA`).
+
 ---
 
-### <ins>2. Configuration Automatique des Dépendances</ins>
+### <ins>2. Dépendances</ins>
 
-Le projet intègre un orchestrateur intelligent en PowerShell (`scripts/setup_build.ps1`) qui inspecte votre environnement, configure les toolchains, télécharge les SDKs nécessaires et prépare CMake sans aucune action manuelle complexe :
-
-```powershell
-# Détection automatique de la toolchain et configuration du build
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_build.ps1
-```
+Aucune étape manuelle : à la première configuration, CMake télécharge OpenCASCADE 8.0.1 et les dépendances 3rdparty
+**dans le dépôt TSA** s'ils sont absents (`TSA/cmake/SetupDependencies.cmake`). TSA et TSALab partagent ces SDK.
 
 ---
 
@@ -108,12 +124,6 @@ cmake --build --preset ninja-release
 # Configuration & compilation Release
 cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release
-```
-
-#### Option C : Script Tout-en-Un
-```powershell
-# Configure et compile automatiquement en mode Release
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_build.ps1 -Build
 ```
 
 ---
@@ -369,55 +379,23 @@ Les interactions et raccourcis clavier respectent scrupuleusement les exigences 
 ## 📁 Organisation du Dépôt
 
 ```text
+TSA/                            # Dépôt TSA voisin : base technique commune (src/, tests/, cmake/, Extensions/, SDK)
 TSALab/
-├── cmake/                      # Scripts CMake et déploiement automatique OCCT/DLLs
-├── docs/                       # Guides d'architecture et spécifications techniques
-│   ├── ARCHITECTURE.md         # Flux de données et principes de conception
-│   ├── ANALYSIS_ENGINES.md     # Architecture multi-moteurs (OpenSees, Custom2D)
-│   ├── BIM_ARCHITECTURE.md     # Couche openBIM, mapping 1:N et persistance
-│   ├── IFC_MAPPING.md          # Spécification d'export et d'import IFC4X3_ADD2
-│   ├── AI_COENGINEERING.md     # Spécification du co-ingénieur IA local et RAG
-│   ├── MODELING_TOOLS.md       # Outils de modification 3D et de dessin paramétrique
-│   ├── THUMBNAIL_PROVIDER.md   # Extension Windows Shell pour aperçus .tsalab
-│   ├── TSALIB_SYSTEM.md        # Spécification complète du système d'extensions TSALib
-│   ├── TSA_FILE_FORMAT.md      # Spécification du format binaire à chunks (v1.4)
-│   ├── NORMATIVE_SYSTEM.md     # Conformité Eurocodes et validation réglementaire
-│   ├── OPENSEES_RESULTS.md     # Structure des résultats et diagrammes 3D
-│   ├── UI.md                   # Architecture de l'interface graphique Qt 6
-│   └── MODEL.md                # Spécification du modèle structural source de vérité
-├── Extensions/                 # Extensions installées (bibliothèque TSALib standard)
-├── resources/                  # Ressources graphiques Qt (.qrc), icônes et branding
-│   ├── branding/               # Logos officiels vectoriels, bannières et renders
-│   └── icons/                  # Jeu complet d'icônes SVG pour le Ruban et la CAO
-├── scripts/                    # Scripts PowerShell d'orchestration et détection d'outils
-├── src/                        # Code source C++20 de l'application
-│   ├── AI/                     # Moteur de co-ingénierie IA locale (LLM, RAG, Hardware)
-│   ├── Analysis/               # Multi-moteurs d'analyse (OpenSees, Custom2D MDD, résultats)
-│   ├── App/                    # Classe d'application principale et AppIdentity
-│   ├── BIM/                    # Couche openBIM (BimModel, IfcGuid, lecteur/scripteur STEP IFC)
-│   ├── Commands/               # Commandes CAO réversibles (ICommand)
-│   ├── Coordinate/             # Points 3D, niveaux d'étages et plans de travail
-│   ├── Diagnostics/            # Moteur de logs, télémétrie et CrashHandler
-│   ├── ExtensionSystem/        # Moteur TSALib (Registry, Loader, Validator, Cache)
-│   ├── Geometry/               # Constructeurs géométriques solides B-Rep OCCT
-│   ├── Grid/                   # Définition, rendu et magnétisme des grilles 3D
-│   ├── IO/                     # Format de fichier binaire .tsalab / .tsa et snapshots
-│   ├── Interaction/            # Outils de modélisation 3D et accrochage OSNAP
-│   ├── Model/                  # Modèle structural source de vérité (Barres, Nœuds, Dalles...)
-│   ├── NDC/                    # Moteur de génération des Notes de Calcul réglementaires
-│   ├── Research/               # Algorithmes de recherche numérique et modèles de validation
-│   ├── ShellExtension/         # DLL d'extension Windows Shell (miniatures Explorateur)
-│   ├── Standards/              # Règles et combinaisons normatives Eurocodes
-│   ├── UI/                     # Interface Qt 6 (AppShell, StartCenter, Ruban, Docks)
-│   ├── UndoRedo/               # Gestionnaire transactionnel Undo/Redo par snapshots
-│   └── Viewer/                 # Vue 3D OpenCASCADE (OccView, textures PBR, isolation)
-├── tests/                      # Suite de tests unitaires automatisés (212 bancs d'essais)
-├── thirdparty/                 # Bibliothèques tierces intégrées (dont MetDeDeplacement MDD)
-├── tools/                      # Outils de validation automatisée (raccourcis, intégrité)
-├── CMakeLists.txt              # Configuration principale du build CMake
-├── CMakePresets.json           # Presets de compilation Ninja et Visual Studio
-└── run.bat                     # Lanceur intelligent tout-en-un
+├── product/                    # Identité et points d'extension du produit TSALab
+│   ├── ProductIdentity.h       # Nom, version, .tsalab, signature TSLB, QSettings, icônes
+│   ├── ProductShellIds.h       # CLSID / ProgID de l'extension Explorateur (miniatures .tsalab)
+│   ├── ProductHooks.cpp        # Start Center laboratoire, rail des espaces, ouverture des exemples
+│   └── ProductTests.cpp        # Suite de tests « lab » (L1-L5)
+├── lab/
+│   ├── Research/               # Numerics (solveurs instrumentés, valeurs propres), Examples, Solver (SOLVER LAB)
+│   └── LabUI/                  # LabStartPanel, LabWorkspaceHost (rail), SolverLabPage
+├── resources/                  # lab.qrc, TSALab.rc, icônes TSALab
+├── CMakeLists.txt              # Trouve ../TSA et appelle tsa_add_product(NAME TSALab …)
+├── CMakePresets.json           # Presets Ninja / Visual Studio (SDK du dépôt TSA)
+└── run.bat                     # Lanceur (PATH Qt / OCCT / 3rdparty du dépôt TSA)
 ```
+
+Documentation de la base commune : `../TSA/docs/` (architecture, format de fichier, moteurs d'analyse, BIM, IA…).
 
 ---
 

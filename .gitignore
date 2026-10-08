@@ -83,3 +83,6 @@ Thumbs.db
 *.zip
 *.7z
 *.tar.gz
+
+# Fichiers écrits par la suite de tests dans le dossier courant
+test_*.tsa
