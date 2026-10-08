@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- Ressources propres à TSALab ; les ressources communes viennent de TSA/resources/resources.qrc. -->
+    <qresource prefix="/icons">
+        <file alias="TSALab.svg">icons/TSALab.svg</file>
+        <file alias="TSALab.ico">icons/TSALab.ico</file>
+        <file alias="TSALab_glyph.svg">icons/TSALab_glyph.svg</file>
+    </qresource>
+</RCC>
