@@ -1,6 +1,20 @@
 # Changelog — TSALab
 
-## 2026-10-08 (base commune avec TSA — ADR-L01, branche feature/shared-tsa-core)
+## 2026-10-08 (IDE scientifique et cœur scientifique — ADR-024 / ADR-L05, branche feature/scientific-ide)
+
+### Changed
+- TSALab n'enveloppe plus MainWindow : fenêtre IDE propre (LabMainWindow) sur les bibliothèques partagées de TSA.
+- Numerics et MetDeDeplacement déplacés dans science/ (C++ pur) ; SolverExperiment devient un adaptateur.
+
+### Added
+- science/ : API tsalab::planar, export K·U = F, banc de validation (6 benchmarks), tsalab-bench, tests.
+- Console : commandes du registre central (TSA::Automation::CommandRegistry) ; espace Modèle affiché après une
+  commande modifiante.
+
+### Found
+- BUG-037 : MetDeDeplacement refuse une ossature sans DDL libre (trouvé par le banc).
+
+## 2026-10-08 (base commune avec TSA — ADR-L01, branche feature/shared-tsa-core) — SUPERSEDED
 
 ### Changed
 - TSALab ne compile plus sa copie de TSA : CMakeLists appelle tsa_add_product() du dépôt ../TSA (TSA_ROOT_DIR).

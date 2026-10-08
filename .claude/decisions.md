@@ -3,7 +3,15 @@
 Last Updated: 2026-10-08. Décisions propres au laboratoire ; celles de la base commune (ADR-001 à ADR-023) sont
 dans `../TSA/.claude/decisions.md` et s'appliquent aussi à TSALab.
 
-## ADR-L01
+## ADR-L05
+Title: TSALab = IDE Qt propre + cœur scientifique sans Qt (application de l'ADR-024 de TSA)
+Decision: LabMainWindow assemble les composants partagés de TSA (session, viewport, arbre, propriétés, console,
+synchronisation, registre de commandes) ; la science (numerics, solveurs, validation) vit dans science/ en C++ pur
+et sert aussi TSA. Les espaces (onglets) n'apparaissent que lorsqu'ils sont réellement implémentés.
+Supersedes: ADR-L01 (TSALab compilait TSA en enveloppant MainWindow) et ADR-L03 (rail autour de MainWindow).
+Status: ACTIVE (2026-10-08)
+
+## ADR-L01 [SUPERSEDED par ADR-L05]
 Title: TSALab compile la base technique de TSA, sans copie (remplace « TSALab indépendant de TSA »)
 Decision: TSALab ne contient que `product/` (identité, points d'extension, tests du laboratoire), `lab/` (modules
 du laboratoire) et ses ressources. Les sources communes sont celles du dépôt TSA voisin (`TSA_ROOT_DIR`, défaut

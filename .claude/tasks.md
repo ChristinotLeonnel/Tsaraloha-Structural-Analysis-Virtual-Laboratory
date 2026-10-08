@@ -1,13 +1,12 @@
 # Tasks — TSALab
 
-Last Updated: 2026-10-08.
+Last Updated: 2026-10-08. Feuille de route complète : ../TSA/docs/TSARALOHA_ARCHITECTURE.md (§4).
 
-- [x] Copies obsolètes de TSA supprimées (2026-10-08, 217/217 ensuite).
-- [ ] Commit de la branche feature/shared-tsa-core (TSALab) et feature/shared-core (TSA) — à fusionner ENSEMBLE.
-- [ ] Vérifier en GUI : exemple ouvert depuis le Start Center, calcul F5 en ADVANCED puis SOLVER LAB (3 méthodes,
-      conditionnement), rail MODÈLE ↔ SOLVER LAB, thème clair, ouverture d'un .tsa puis Enregistrer → .tsalab.
-- [ ] SOLVER LAB : calcul en tâche de fond (QThread) pour les grands systèmes ; export CSV du tableau.
-- [ ] Espace VALIDATION : comparer chaque exemple à sa solution analytique (`ExampleInfo::reference`).
-- [ ] Espaces ANALYSIS / RESULTS / ELEMENT LAB / EXPERIMENT / VISUAL CODING : à définir avant implémentation.
-- [ ] Les SDK OCCT / 3rdparty / thirdparty/OpenSees encore présents (non suivis) dans TSALab ne servent plus :
-      supprimables par l'utilisateur pour libérer de la place.
+- [ ] Fusion des branches feature/scientific-ide (TSALab) et feature/tsaraloha-shared-libs (TSA) ENSEMBLE.
+- [ ] Phase 6 — Blueprint : runtime typé (flux de données / d'exécution, nœuds = commandes du registre + science),
+      sérialisation .tsbp versionnée, éditeur (QGraphicsView), espace Blueprint.
+- [ ] Phase 7 — AnalysisController partagé (extrait de MainWindow), espaces Analysis / Results, Matrix viewer,
+      SOLVER LAB (SolverLabPage) affiché dans l'espace Research.
+- [ ] Phase 8 — débogueur / profileur, plugins, IA sur Blueprint, moteur OpenSees dans science/.
+- [ ] BUG-037 (MetDeDeplacement sans DDL libre) — dans science/engines/MetDeDeplacement.
+- [ ] Vérifier en GUI : exemple depuis l'Accueil, dessin à la souris, thème clair, Enregistrer d'un .tsa → .tsalab.

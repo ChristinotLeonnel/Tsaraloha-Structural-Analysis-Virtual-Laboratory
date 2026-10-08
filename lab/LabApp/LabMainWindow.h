@@ -70,6 +70,8 @@ private:
     void afterProjectLoaded();
     void updateTitle();
     void updateHistoryActions();
+    /// Console : commandes du registre central partagé (TSA::Automation::CommandRegistry), « help » pour la liste.
+    void runConsoleCommand(const QString& line);
     void log(const QString& text, const QString& type = QStringLiteral("SYS"));
 
 private:

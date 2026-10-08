@@ -4,6 +4,7 @@
 #include "Research/Examples/ExampleModels.h"
 
 #include "App/ProductInfo.h"
+#include "Automation/CommandRegistry.h"
 #include "IO/TSAFile.h"
 #include "Model/Model.h"
 #include "Project/ProjectManager.h"
@@ -76,6 +77,7 @@ LabMainWindow::LabMainWindow(QWidget* parent)
 
     connect(&m_session->project(), &TSA::Project::ProjectManager::modifiedChanged, this, &LabMainWindow::updateTitle);
     connect(m_view, &OccView::elementCreated, this, &LabMainWindow::updateHistoryActions);
+    connect(m_console, &TSA::UI::LogConsoleDock::commandEntered, this, &LabMainWindow::runConsoleCommand);
 
     m_defaultLayout = saveState();
     QSettings s = labSettings();
@@ -410,6 +412,45 @@ void LabMainWindow::updateHistoryActions()
     m_actUndo->setEnabled(m_session->canUndo());
     m_actRedo->setEnabled(m_session->canRedo());
     updateTitle();
+}
+
+void LabMainWindow::runConsoleCommand(const QString& line)
+{
+    using namespace TSA::Automation;
+    const CommandRegistry& registry = CommandRegistry::builtIn();
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty()) return;
+
+    if (trimmed.compare(QLatin1String("help"), Qt::CaseInsensitive) == 0
+        || trimmed.compare(QLatin1String("aide"), Qt::CaseInsensitive) == 0)
+    {
+        for (const CommandSpec* spec : registry.commands())
+        {
+            QStringList params;
+            for (const auto& p : spec->parameters)
+            {
+                QString unit = QString::fromUtf8(quantityUnit(p.quantity));
+                params << QStringLiteral("%1%2=<%3%4>%5")
+                              .arg(p.required ? QString() : QStringLiteral("["), QString::fromStdString(p.name),
+                                   QString::fromUtf8(typeName(p.type)), unit.isEmpty() ? QString() : QStringLiteral(", ") + unit,
+                                   p.required ? QString() : QStringLiteral("]"));
+            }
+            log(QStringLiteral("%1 — %2 : %3").arg(QString::fromStdString(spec->id), QString::fromStdString(spec->title),
+                                                   params.join(QLatin1Char(' '))),
+                QStringLiteral("INFO"));
+        }
+        return;
+    }
+
+    const CommandResult r = executeCommandLine(registry, *m_session, trimmed.toStdString());
+    log(QString::fromStdString(r.message), r.ok ? QStringLiteral("SYS") : QStringLiteral("ERROR"));
+    if (r.ok)
+    {
+        updateHistoryActions();
+        if (const auto* spec = registry.find(trimmed.section(QLatin1Char(' '), 0, 0).toStdString()); spec && spec->modifiesModel)
+            m_workspaces->setCurrentWidget(m_viewport);   // montrer le modèle modifié
+        m_view->update();
+    }
 }
 
 void LabMainWindow::log(const QString& text, const QString& type)

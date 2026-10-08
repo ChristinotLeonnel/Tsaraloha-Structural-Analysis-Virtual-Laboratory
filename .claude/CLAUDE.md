@@ -1,51 +1,44 @@
 # TSALab — Tsaraloha Structural Analysis Laboratory
 
-Mémoire technique persistante pour Claude Code. **Le code réel fait foi** : corriger cette documentation en cas
-de divergence.
+Mémoire technique persistante pour Claude Code. **Le code réel fait foi.**
 
 ## Identité
 
-Laboratoire d'ingénierie structurale de l'écosystème Tsaraloha : modéliser, expérimenter, inspecter, tester,
-valider, comprendre. TSA est le logiciel de production ; TSALab est construit **sur la même base technique**.
+Laboratoire scientifique de l'écosystème Tsaraloha : IDE Qt (TSALab.exe) pour dessiner, programmer
+(Blueprint, à venir), expérimenter, calculer, valider et visualiser ; cœur scientifique C++ pur utilisé
+aussi par TSA. Architecture de référence : `../TSA/docs/TSARALOHA_ARCHITECTURE.md` (ADR-024).
 
-## Base commune avec TSA (ADR-023 de TSA, ADR-L01 ici) — règle n° 1
-
-TSALab ne contient **aucune copie** des sources de TSA. Son CMakeLists compile les sources du dépôt TSA voisin
-(`TSA_ROOT_DIR`, par défaut `../TSA`) via `tsa_add_product()` de `TSA/cmake/TSAProduct.cmake`.
+## Organisation
 
 ```text
 TSALab/
-  product/   ProductIdentity.h (nom, .tsalab, signature TSLB, QSettings…), ProductShellIds.h (CLSID),
-             ProductHooks.cpp (configureShell : panneau Start Center, rail des espaces),
-             ProductTests.cpp (suite --suite=lab, tests L1–L5)
-  lab/       Research/ (Numerics : solveurs instrumentés ; Examples : modèles d'exemple ;
-             Solver : SolverExperiment) — compilés dans TSALab_Core, testés
-             LabUI/ (LabStartPanel, LabWorkspaceHost, SolverLabPage) — exécutable seulement
-  resources/ lab.qrc, TSALab.rc, icônes TSALab
+  science/   cœur scientifique C++20 PUR (ni Qt, ni OCCT, ni modèle TSA) — tsalab_science
+             numerics (solveurs instrumentés, valeurs propres, comparaison), planar (API des solveurs
+             d'ossatures planes, MetDeDeplacement), validation (benchmarks analytiques + validation croisée),
+             tools/tsalab-bench (console), tests/ (sans Qt). TSA le lie pour son moteur « custom2d ».
+  lab/       LabApp (main, LabMainWindow : fenêtre IDE), LabUI (LabStartPanel, SolverLabPage),
+             Research (exemples = modèles TSA, adaptateur SOLVER LAB), Tests (application)
+  product/   identité TSALab (ProductIdentity.h : .tsalab, TSLB, QSettings…) et CLSID (ProductShellIds.h)
+  resources/ icônes, lab.qrc, TSALab.rc
 ```
-
-- Un bug de la base commune se corrige **dans TSA** (`../TSA/src`), jamais dans TSALab.
-- Besoin d'un comportement différent dans TSALab : constante dans `product/ProductIdentity.h` (même API que
-  `TSA/product/ProductIdentity.h` — ajouter la constante aux DEUX) ou point d'extension dans TSA
-  (`StartCenter::setLaunchPanel`, `AppShell::setWorkspaceDecorator`, `MainWindow::resultsChanged`…).
-- `lab/` ne doit jamais contenir un chemin qui existe dans `TSA/src` (contrôlé par CMake, FATAL_ERROR).
-- Toute modification de `TSA/src` se vérifie sur les deux produits : TSA (212 tests) et TSALab (212 + 5).
-- Mémoire de la base commune (architecture, bugs, décisions) : `../TSA/.claude/`. Ne pas la dupliquer ici.
+- La fenêtre de TSALab n'a ni moteur graphique ni modèle propres : ProjectSession, OccView, ViewportContainer,
+  ModelTreeWidget, PropertyPanel, LogConsoleDock, SelectionSynchronizer, EcosystemApplication et
+  Automation::CommandRegistry viennent des bibliothèques partagées de TSA (TSALab_Model / _Graphics / _Widgets).
+- Règle n° 1 : ne jamais copier un fichier de TSA. Besoin d'un comportement : composant partagé ou point
+  d'extension dans TSA ; calcul : science/ ; commande métier : CommandRegistry.
+- `lab/` ne doit jamais masquer un chemin de `TSA/src` (contrôle CMake).
 
 ## Build & test
 
 ```powershell
 $vcvars = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 cmd /c "`"$vcvars`" >nul && cmake --preset ninja-debug && cmake --build --preset ninja-debug -- -k 0 -j 4"
-build-ninja-debug\TSALab_TestSuite.exe            # toutes les suites ; --suite=lab pour le laboratoire
+build-ninja-debug\TSALab_TestSuite.exe                       # application (2 tests)
+build-ninja-debug\tsalab_science\tsalab_science_tests.exe    # cœur scientifique (5 tests)
+build-ninja-debug\tsalab_science\tsalab-bench.exe            # banc de validation (6 benchmarks)
 ```
-- SDK (OCCT, 3rdparty, OpenSees, Extensions/) : ceux du dépôt TSA (presets → `../TSA/opencascade-…`).
-- Ne pas lancer les builds TSA et TSALab en parallèle (`-j 4` chacun : erreurs mémoire PCH C3859).
-- Si `CMAKE_CXX_FLAGS` est vide dans `build-*/CMakeCache.txt` (pas de /EHsc → test 96 échoue) :
-  `cmake --preset ninja-debug --fresh`.
+- Dépôt TSA voisin requis (`TSA_ROOT_DIR`) ; SDK OCCT / 3rdparty : ceux de TSA.
+- Ne pas compiler TSA et TSALab en parallèle (mémoire PCH). Cache sans /EHsc : `--fresh` (BUG-036 de TSA).
 
 ## Mémoire
-
-→ `current-state.md`, `tasks.md`, `decisions.md`, `changelog.md` (propres à TSALab) ;
-base commune : `../TSA/.claude/architecture.md`, `known-issues.md`, `decisions.md`.
-Ne jamais marquer une fonctionnalité IMPLEMENTED sans preuve dans le code ni un bug FIXED sans test.
+→ `current-state.md`, `tasks.md`, `decisions.md`, `changelog.md` ; base commune : `../TSA/.claude/`.
