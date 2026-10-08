@@ -120,9 +120,9 @@ SolverLabPage::SolverLabPage(QWidget* parent)
     auto* title = new QLabel(tr("SOLVER LAB — résolution de K·U = F"), this);
     title->setStyleSheet("font-size: 18px; font-weight: 700;");
     root->addWidget(title);
-    auto* intro = new QLabel(tr("Rejoue la résolution du dernier calcul OpenSees avec les solveurs instrumentés du laboratoire. "
-                                "K et U sont ceux extraits du calcul (mode ADVANCED) ; F = K·U regroupe les efforts nodaux "
-                                "équivalents vus par le solveur. Chaque méthode est comparée à la solution d'OpenSees."), this);
+    auto* intro = new QLabel(tr("Rejoue la résolution du dernier calcul (Custom2D ou OpenSees) avec les solveurs instrumentés du laboratoire. "
+                                "K, F et U sont ceux du système exporté par Custom2D, ou extraits d'OpenSees en mode ADVANCED "
+                                "(F = K·U : efforts nodaux équivalents vus par le solveur). Chaque méthode est comparée à la solution du moteur."), this);
     intro->setWordWrap(true);
     root->addWidget(intro);
 
@@ -149,7 +149,7 @@ SolverLabPage::SolverLabPage(QWidget* parent)
 
     m_table = new QTableWidget(0, ColCount, this);
     m_table->setHorizontalHeaderLabels({ tr("Méthode"), tr("Statut"), tr("Itérations"), tr("Résidu ‖K·x − F‖/‖F‖"),
-                                         tr("Écart / OpenSees"), tr("Pivot min"), tr("Pivot max"), tr("Temps (ms)") });
+                                         tr("Écart / moteur"), tr("Pivot min"), tr("Pivot max"), tr("Temps (ms)") });
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->verticalHeader()->hide();
@@ -188,7 +188,7 @@ void SolverLabPage::rebuildInput()
 {
     m_inputValid = false;
     m_systemInfo->clear();
-    std::string why = "Aucun calcul : ouvrir l'espace MODÈLE et lancer un calcul OpenSees (F5) en extraction ADVANCED.";
+    std::string why = "Aucun calcul : espace ANALYSE, cocher « Exporter le système K·U = F » (Custom2D) puis Calculer.";
     if (m_results && buildSolverExperiment(*m_results, m_input, &why))
     {
         m_inputValid = true;

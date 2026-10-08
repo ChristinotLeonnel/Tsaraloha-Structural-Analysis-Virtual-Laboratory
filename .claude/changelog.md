@@ -1,5 +1,15 @@
 # Changelog — TSALab
 
+## 2026-10-08 (espaces Analyse / Résultats / Recherche — ADR-024 phase 7)
+
+### Added
+- Espace Analyse (AnalysisManagerPanel partagé), espace Résultats (Diagram2DWidget), espace Recherche (SOLVER LAB),
+  docks Résultats et Données d'analyse, menu Analyse (Calculer F9), réglages par défaut du laboratoire.
+- Test L7 : exemples plans calculés sans grille, K·U = F rejoué par LU / Cholesky / gradient conjugué (4/4).
+
+### Changed
+- SOLVER LAB : utilise F et U exportés par le moteur quand ils existent (Custom2D), sinon F = K·U (OpenSees).
+
 ## 2026-10-08 (espace Blueprint, BUG-037)
 
 ### Added

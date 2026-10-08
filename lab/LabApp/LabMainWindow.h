@@ -7,8 +7,11 @@
 //   ProjectSession (modèle, commandes, grilles, fichier) · OccView + ViewportContainer (viewport,
 //   caméra, grilles, accrochage, sélection, outils de dessin) · ModelTreeWidget · PropertyPanel ·
 //   LogConsoleDock · SelectionSynchronizer.
-// Espaces de travail (onglets centraux) : Accueil, Modèle, Blueprint (programmation visuelle partagée).
-// Les espaces Analysis, Results et Research s'ajoutent quand ils existent réellement.
+// Espaces de travail (onglets centraux) : Accueil, Modèle, Blueprint (programmation visuelle partagée),
+// Analyse (gestionnaire d'analyse partagé : moteurs, réglages, calcul en tâche de fond), Résultats
+// (diagrammes 2D), Recherche (SOLVER LAB). Docks : explorateur, propriétés, console, résultats (affichage
+// dans le viewport), données d'analyse (K globale, K·U = F, DDL). Le calcul est piloté par le contrôleur
+// d'analyse de la session (TSA::Analysis::AnalysisController), le même que dans TSA.
 
 #include <QMainWindow>
 
@@ -29,6 +32,11 @@ class SelectionManager;
 }
 namespace TSA::UI
 {
+class AnalysisDataDock;
+class AnalysisEngineOptionsRegistry;
+class AnalysisManagerPanel;
+class Diagram2DWidget;
+class ResultsDockWidget;
 class BlueprintEditor;
 class LogConsoleDock;
 class ModelTreeWidget;
@@ -40,6 +48,7 @@ namespace TSALab::UI
 {
 
 class LabStartPanel;
+class SolverLabPage;
 
 class LabMainWindow : public QMainWindow
 {
@@ -73,17 +82,28 @@ private:
     void updateHistoryActions();
     /// Console : commandes du registre central partagé (TSA::Automation::CommandRegistry), « help » pour la liste.
     void runConsoleCommand(const QString& line);
+    /// Résultats du contrôleur d'analyse → viewport, docks, diagrammes, SOLVER LAB.
+    void onResultsChanged();
+    void onResultsBecameStale();
+    /// Réglages d'analyse du laboratoire pour un projet qui n'en a pas (Custom2D, plan du modèle, K·U = F).
+    void applyLabAnalysisDefaults();
     void log(const QString& text, const QString& type = QStringLiteral("SYS"));
 
 private:
     std::unique_ptr<TSA::Project::ProjectSession> m_session;     ///< déclarée en premier : détruite en dernier
     std::unique_ptr<TSA::Viewer::SelectionManager> m_selection;
+    std::unique_ptr<TSA::UI::AnalysisEngineOptionsRegistry> m_engineOptions;
 
     QTabWidget* m_workspaces = nullptr;
     LabStartPanel* m_home = nullptr;
     OccView* m_view = nullptr;
     TSA::UI::ViewportContainer* m_viewport = nullptr;
     TSA::UI::BlueprintEditor* m_blueprint = nullptr;
+    TSA::UI::AnalysisManagerPanel* m_analysisPanel = nullptr;
+    TSA::UI::Diagram2DWidget* m_diagram = nullptr;
+    SolverLabPage* m_solverLab = nullptr;
+    TSA::UI::ResultsDockWidget* m_resultsDock = nullptr;
+    TSA::UI::AnalysisDataDock* m_dataDock = nullptr;
     TSA::UI::ModelTreeWidget* m_tree = nullptr;
     TSA::UI::PropertyPanel* m_properties = nullptr;
     TSA::UI::LogConsoleDock* m_console = nullptr;

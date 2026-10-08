@@ -1,7 +1,10 @@
 // Tests de l'application TSALab (exécutable TSALab_TestSuite) : exemples, format .tsalab et import des
-// modèles TSA. Le cœur scientifique a ses propres tests (science/tests, tsalab_science_tests) ; la base
+// modèles TSA, Blueprints, analyse (contrôleur partagé) et SOLVER LAB. Le cœur scientifique a ses propres tests (science/tests, tsalab_science_tests) ; la base
 // commune (modèle, viewport, IO…) est couverte par les 212 tests de TSA.
+#include "Analysis/AnalysisController.h"
+#include "Analysis/ResultsModel.h"
 #include "App/ProductInfo.h"
+#include "Automation/CommandRegistry.h"
 #include "IO/TSAFile.h"
 #include "IO/TSAFileFormat.h"
 #include "Model/Model.h"
@@ -12,6 +15,7 @@
 #include "Project/ProjectSession.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
+#include "Research/Solver/SolverExperiment.h"
 
 #include <QApplication>
 #include <QTemporaryDir>
@@ -37,7 +41,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 3;
+constexpr int kLabTests = 4;
 
 bool runSuite_Lab(int& passed)
 {
@@ -131,6 +135,49 @@ bool runSuite_Lab(int& passed)
                            "Test L6: rapport du banc de validation dans le journal");
         }
         std::cout << "[PASS] Test L6: " << BlueprintExamples::catalog().size() << " Blueprints d'exemple exécutés" << std::endl;
+        ++passed;
+    }
+    // TEST L7 : analyse dans TSALab — exemples plans calculés sans grille (portée « plan du modèle »), système
+    // K·U = F exporté, rejoué par SOLVER LAB (Gauss LU, Cholesky, gradient conjugué)
+    {
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        int planar = 0;
+        for (const auto& ex : Examples::catalog())
+        {
+            if (ex.id == "frame-3d") continue;   // portique spatial : non plan
+            TSA::Project::ProjectSession session;
+            TEST_CHECK(Examples::build(ex.id, session.model()), "Test L7: exemple construit (" << ex.id << ")");
+            const auto r = TSA::Automation::executeCommandLine(reg, session, "analysis.run engine=custom2d axis=plan export_system=true");
+            TEST_CHECK(r.ok, "Test L7: " << ex.id << " calculé (" << r.message << ")");
+            const auto results = session.analysis().results();
+            SolverExperimentInput input;
+            std::string why;
+            if (ex.id == "fixed-fixed")
+            {
+                // Deux nœuds encastrés : aucun DDL libre, K vide — signalé, jamais inventé.
+                TEST_CHECK(results && !results->advanced().hasGlobalStiffness && !results->advanced().kGlobalUnavailableReason.empty()
+                               && !buildSolverExperiment(*results, input, &why) && why.find("aucun degré de liberté") != std::string::npos,
+                           "Test L7: poutre bi-encastrée sans DDL libre signalée");
+                ++planar;
+                continue;
+            }
+            TEST_CHECK(results && results->advanced().hasGlobalStiffness, "Test L7: K exportée (" << ex.id << ")");
+            TEST_CHECK(buildSolverExperiment(*results, input, &why), "Test L7: expérience SOLVER LAB (" << ex.id << ", " << why << ")");
+            for (SolverMethod m : { SolverMethod::GaussLU, SolverMethod::Cholesky, SolverMethod::ConjugateGradient })
+            {
+                const SolverRun run = runSolver(input, m, SolverSettings {});
+                TEST_CHECK(run.report.success && run.deviationFromReference >= 0.0 && run.deviationFromReference < 1e-6,
+                           "Test L7: " << solverMethodName(m) << " retrouve U du moteur (" << ex.id << ")");
+            }
+            ++planar;
+        }
+        TEST_CHECK(planar == 5, "Test L7: 5 exemples plans calculés");
+        // Portique spatial : aucun plan, le moteur 2D refuse explicitement.
+        TSA::Project::ProjectSession space;
+        TEST_CHECK(Examples::build("frame-3d", space.model()), "Test L7: portique spatial construit");
+        TEST_CHECK(!TSA::Automation::executeCommandLine(reg, space, "analysis.run engine=custom2d axis=plan").ok,
+                   "Test L7: portique spatial refusé en 2D (modèle non plan)");
+        std::cout << "[PASS] Test L7: analyse et SOLVER LAB sur les exemples" << std::endl;
         ++passed;
     }
     return true;

@@ -1,7 +1,7 @@
 #pragma once
 
 // Espace SOLVER LAB : rejoue la résolution K·U = F du dernier calcul avec les solveurs instrumentés
-// du laboratoire (TSALab::Research::runSolver) et compare chaque méthode à la solution d'OpenSees :
+// du laboratoire (TSALab::Research::runSolver) et compare chaque méthode à la solution du moteur (Custom2D, OpenSees) :
 // itérations, résidu, écart, pivots (détection de mécanisme), conditionnement, convergence du
 // gradient conjugué. Lecture seule : le modèle et les résultats ne sont jamais modifiés.
 

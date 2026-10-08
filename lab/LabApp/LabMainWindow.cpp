@@ -1,9 +1,13 @@
 #include "LabMainWindow.h"
 
 #include "LabUI/LabStartPanel.h"
+#include "LabUI/SolverLabPage.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
+#include "Analysis/AnalysisController.h"
+#include "Analysis/Engine/AnalysisModel.h"
+#include "Analysis/ResultsModel.h"
 #include "App/ProductInfo.h"
 #include "Automation/CommandRegistry.h"
 #include "IO/TSAFile.h"
@@ -11,14 +15,20 @@
 #include "Project/ProjectManager.h"
 #include "Project/ProjectSession.h"
 #include "Project/RecentProjects.h"
+#include "UI/Analysis/AnalysisEngineOptions.h"
+#include "UI/Analysis/AnalysisManagerPanel.h"
 #include "UI/Blueprint/BlueprintEditor.h"
 #include "UI/Common/SelectionSynchronizer.h"
+#include "UI/Diagrams/Diagram2DWidget.h"
+#include "UI/Dock/AnalysisDataDock.h"
 #include "UI/Dock/LogConsoleDock.h"
+#include "UI/Dock/ResultsDockWidget.h"
 #include "UI/ModelTree/ModelTreeWidget.h"
 #include "UI/Properties/PropertyPanel.h"
 #include "UI/Ruler/ViewportContainer.h"
 #include "UI/Theme/ThemeManager.h"
 #include "Viewer/OccView.h"
+#include "Viewer/ResultsVisualManager.h"
 #include "Viewer/SelectionManager.h"
 #include "Viewer/ViewManager.h"
 
@@ -49,7 +59,7 @@ const char* kStateKey = "LabMainWindow/state";
 const char* kGeometryKey = "LabMainWindow/geometry";
 /// Version de la disposition des panneaux : à incrémenter quand les docks / barres changent. Une disposition
 /// mémorisée d'une autre version est ignorée (elle pourrait masquer des panneaux ou faire flotter une barre).
-constexpr int kLayoutVersion = 3;
+constexpr int kLayoutVersion = 4;
 
 QSettings labSettings()
 {
@@ -62,7 +72,9 @@ LabMainWindow::LabMainWindow(QWidget* parent)
     : QMainWindow(parent)
     , m_session(std::make_unique<TSA::Project::ProjectSession>(this))
     , m_selection(std::make_unique<TSA::Viewer::SelectionManager>(this))
+    , m_engineOptions(std::make_unique<TSA::UI::AnalysisEngineOptionsRegistry>())
 {
+    TSA::UI::registerBuiltInEngineOptions(*m_engineOptions);
     setObjectName("TSALabMainWindow");
     setDockNestingEnabled(true);
     resize(1500, 900);
@@ -89,6 +101,15 @@ LabMainWindow::LabMainWindow(QWidget* parent)
         m_view->update();
     });
 
+    // Analyse : contrôleur partagé de la session (même orchestration que TSA).
+    auto& analysis = m_session->analysis();
+    connect(&analysis, &TSA::Analysis::AnalysisController::resultsChanged, this, &LabMainWindow::onResultsChanged);
+    connect(&analysis, &TSA::Analysis::AnalysisController::resultsBecameStale, this, &LabMainWindow::onResultsBecameStale);
+    connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::logMessage, this,
+            [this](const QString& text, const QString& type) { log(text, type); });
+    connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::settingsChanged, this, &LabMainWindow::updateTitle);
+    m_analysisPanel->setSelectionProvider([this] { return m_selection->selectedElements(); });
+
     m_defaultLayout = saveState();
     QSettings s = labSettings();
     restoreGeometry(s.value(kGeometryKey).toByteArray());
@@ -96,6 +117,8 @@ LabMainWindow::LabMainWindow(QWidget* parent)
 
     m_session->project().newProject(m_session->model(), &m_session->grids());
     m_tree->setGridManager(&m_session->grids());
+    applyLabAnalysisDefaults();
+    m_analysisPanel->refresh();
     updateTitle();
     updateHistoryActions();
     log(tr("%1 initialisé — base commune TSA (modèle, viewport, commandes, panneaux).").arg(TSA::Product::name()));
@@ -135,6 +158,19 @@ void LabMainWindow::createWorkspaces()
     m_blueprint->setSession(m_session.get());
     m_workspaces->addTab(m_blueprint, QIcon(":/icons/modeling/load_dist.svg"), tr("Blueprint"));
 
+    // Analyse : gestionnaire d'analyse partagé (moteurs, réglages du projet, validation, calcul en tâche de fond).
+    m_analysisPanel = new TSA::UI::AnalysisManagerPanel(m_session.get(), m_engineOptions.get(), m_workspaces);
+    m_workspaces->addTab(m_analysisPanel, QIcon(":/icons/analysis_run.svg"), tr("Analyse"));
+
+    // Résultats : diagrammes 2D par barre (la déformée et les diagrammes 3D sont dans le viewport, dock Résultats).
+    m_diagram = new TSA::UI::Diagram2DWidget(m_workspaces);
+    m_diagram->setModel(&m_session->model());
+    m_workspaces->addTab(m_diagram, QIcon(":/icons/results_force.svg"), tr("Résultats"));
+
+    // Recherche : SOLVER LAB (résolution instrumentée de K·U = F du dernier calcul).
+    m_solverLab = new SolverLabPage(m_workspaces);
+    m_workspaces->addTab(m_solverLab, QIcon(":/icons/results_disp.svg"), tr("Recherche"));
+
     setCentralWidget(m_workspaces);
 }
 
@@ -158,6 +194,43 @@ void LabMainWindow::createDocks()
     m_console->setObjectName("LabConsole");
     m_console->setWindowTitle(tr("Console / Sortie"));
     addDockWidget(Qt::BottomDockWidgetArea, m_console);
+
+    // Résultats affichés dans le viewport partagé (déformée, diagrammes, réactions) : même dock que TSA.
+    m_resultsDock = new TSA::UI::ResultsDockWidget(this);
+    m_resultsDock->setObjectName("LabResults");
+    m_resultsDock->setModel(&m_session->model());
+    addDockWidget(Qt::RightDockWidgetArea, m_resultsDock);
+    tabifyDockWidget(m_propertiesDock, m_resultsDock);
+    m_propertiesDock->raise();
+    if (auto* rv = m_view->resultsVisual())
+    {
+        using RD = TSA::UI::ResultsDockWidget;
+        using RV = TSA::Viewer::ResultsVisualManager;
+        connect(m_resultsDock, &RD::deformedToggled, rv, &RV::setDeformedVisible);
+        connect(m_resultsDock, &RD::deformedDisplayModeChanged, rv, &RV::setDeformedDisplayMode);
+        connect(m_resultsDock, &RD::deformationScalePresetChanged, rv, &RV::setDeformationScalePreset);
+        connect(m_resultsDock, &RD::diagramTypeChanged, rv, &RV::setDiagramType);
+        connect(m_resultsDock, &RD::diagramScalePresetChanged, rv, &RV::setDiagramScalePreset);
+        connect(m_resultsDock, &RD::diagramLabelsToggled, rv, &RV::setDiagramLabelsVisible);
+        connect(m_resultsDock, &RD::reactionsToggled, rv, &RV::setReactionsVisible);
+        connect(m_resultsDock, &RD::activeStepChanged, rv, &RV::setActiveStep);
+        connect(m_resultsDock, &RD::legendToggled, rv, &RV::setLegendVisible);
+    }
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::nodesVisibleToggled, m_view, &OccView::setNodesVisible);
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::nodeLabelsToggled, m_view, &OccView::setNodeLabelsVisible);
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::nodeFilterChanged, m_view, &OccView::setNodeDisplayFilter);
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::fitModelRequested, m_view, &OccView::fitModel);
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::fitResultsRequested, m_view, &OccView::fitResults);
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::fitDeformedRequested, m_view, &OccView::fitDeformed);
+    connect(m_resultsDock, &TSA::UI::ResultsDockWidget::fitSelectionRequested, m_view, &OccView::fitSelection);
+
+    // Données numériques du calcul : K globale, K·U = F, DDL, efforts bruts (matrix viewer partagé).
+    m_dataDock = new TSA::UI::AnalysisDataDock(this);
+    m_dataDock->setObjectName("LabAnalysisData");
+    m_dataDock->setModel(&m_session->model());
+    addDockWidget(Qt::BottomDockWidgetArea, m_dataDock);
+    tabifyDockWidget(m_console, m_dataDock);
+    m_console->raise();
 }
 
 void LabMainWindow::createActions()
@@ -239,7 +312,8 @@ void LabMainWindow::createMenus()
     connect(grid, &QAction::toggled, this, [this](bool on) { m_view->setGridVisible(on); });
     view->addSeparator();
     QMenu* panels = view->addMenu(tr("&Panneaux"));
-    for (QDockWidget* d : { m_treeDock, m_propertiesDock, static_cast<QDockWidget*>(m_console) })
+    for (QDockWidget* d : { m_treeDock, m_propertiesDock, static_cast<QDockWidget*>(m_console),
+                            static_cast<QDockWidget*>(m_resultsDock), static_cast<QDockWidget*>(m_dataDock) })
         panels->addAction(d->toggleViewAction());
     view->addAction(tr("Disposition par défaut"), this, [this] { restoreState(m_defaultLayout); });
     view->addAction(tr("Thème clair / sombre"), this, [] { TSA::UI::ThemeManager::instance().toggleTheme(); });
@@ -286,6 +360,33 @@ void LabMainWindow::createMenus()
         });
         a->setToolTip(QString::fromStdString(ex.description));
     }
+
+    // --- Analyse : gestionnaire partagé (mêmes moteurs, mêmes réglages que TSA)
+    QMenu* an = menuBar()->addMenu(tr("A&nalyse"));
+    an->addAction(tr("Gestionnaire d'analyse"), this, [this] { m_workspaces->setCurrentWidget(m_analysisPanel); });
+    an->addAction(tr("Configurer le calcul…"), this, [this] {
+        m_workspaces->setCurrentWidget(m_analysisPanel);
+        m_analysisPanel->configure();
+    });
+    an->addAction(tr("Valider le modèle d'analyse"), this, [this] {
+        m_workspaces->setCurrentWidget(m_analysisPanel);
+        m_analysisPanel->validate();
+    });
+    QAction* runAnalysis = an->addAction(QIcon(":/icons/analysis_run.svg"), tr("▶ Calculer"), this, [this] {
+        m_workspaces->setCurrentWidget(m_analysisPanel);
+        m_analysisPanel->run();
+    });
+    runAnalysis->setShortcut(QKeySequence(Qt::Key_F9));
+    an->addAction(tr("Annuler le calcul"), this, [this] { m_analysisPanel->cancel(); });
+    an->addSeparator();
+    an->addAction(tr("Diagrammes 2D"), this, [this] { m_workspaces->setCurrentWidget(m_diagram); });
+    an->addAction(tr("Données d'analyse (K, F, U)"), this, [this] {
+        m_dataDock->show();
+        m_dataDock->raise();
+    });
+    an->addAction(tr("SOLVER LAB"), this, [this] { m_workspaces->setCurrentWidget(m_solverLab); });
+    bar->addSeparator();
+    bar->addAction(runAnalysis);
 
     // --- Aide
     QMenu* help = menuBar()->addMenu(tr("&Aide"));
@@ -427,6 +528,12 @@ bool LabMainWindow::maybeSave()
 void LabMainWindow::afterProjectLoaded()
 {
     m_session->model().clearUndoRedo();
+    // Réglages d'analyse enregistrés avec le projet ; résultats du projet précédent oubliés.
+    if (!m_session->analysis().restoreContextFromModel())
+        log(tr("Paramètres d'analyse du projet illisibles : réglages par défaut."), QStringLiteral("WARN"));
+    if (m_session->model().analysisSettingsJson().empty()) applyLabAnalysisDefaults();
+    m_session->analysis().clearResults();
+    m_analysisPanel->refresh();
     m_view->rebuildGrid();
     m_view->fitModel();
     m_tree->setProjectName(m_session->project().hasFilePath() ? m_session->project().currentFileName()
@@ -491,6 +598,58 @@ void LabMainWindow::runConsoleCommand(const QString& line)
     }
 }
 
+void LabMainWindow::applyLabAnalysisDefaults()
+{
+    // Projet sans réglages d'analyse : le laboratoire part du moteur intégré (Custom2D, cœur scientifique),
+    // sur le plan du modèle s'il est plan, système K·U = F exporté (matrix viewer, SOLVER LAB). Rien n'est
+    // écrit dans le modèle tant que l'utilisateur ne modifie pas les réglages.
+    using namespace TSA::Analysis;
+    AnalysisController& ac = m_session->analysis();
+    if (!ac.registry().engine("custom2d")) return;
+    AnalysisContext c = ac.context();
+    c.engineId = "custom2d";
+    c.dimension = AnalysisDimension::Plane2D;
+    c.scope = AnalysisScope {};
+    c.scope.type = ScopeType::ModelPlane;   // plan détecté à chaque calcul (le modèle peut encore être dessiné)
+    QJsonObject settings = c.settingsFor("custom2d");
+    settings.insert(QStringLiteral("exportSystem"), true);
+    c.engineSettings["custom2d"] = settings;
+    ac.setContext(c);
+}
+
+void LabMainWindow::onResultsChanged()
+{
+    const auto results = m_session->analysis().results();
+    m_view->setResultsModel(results);
+    m_resultsDock->setResultsModel(results);
+    m_dataDock->setResultsModel(results);
+    m_diagram->setResultsModel(results);
+    m_properties->setResultsModel(results);
+    m_solverLab->setResults(results);
+    if (results)
+    {
+        if (m_view->resultsVisual()) m_resultsDock->syncFromVisualManager(m_view->resultsVisual());
+        m_resultsDock->show();
+        m_resultsDock->raise();
+        statusBar()->showMessage(tr("Résultats publiés : δmax = %1 mm").arg(results->summary().maxDisplacement * 1000.0, 0, 'f', 3), 6000);
+    }
+    m_view->update();
+}
+
+void LabMainWindow::onResultsBecameStale()
+{
+    // Les vues vérifient ResultsModel::isValid() : il suffit de les rafraîchir.
+    const auto results = m_session->analysis().results();
+    if (m_view->resultsVisual()) m_view->resultsVisual()->clearAllVisuals();
+    m_resultsDock->setResultsModel(results);
+    m_dataDock->setResultsModel(results);
+    m_diagram->setResultsModel(results);
+    m_properties->setResultsModel(results);
+    m_solverLab->setResults(results);
+    m_view->update();
+    log(tr("Modèle modifié depuis le dernier calcul : résultats obsolètes, relancez l'analyse."), QStringLiteral("WARN"));
+}
+
 void LabMainWindow::log(const QString& text, const QString& type)
 {
     if (m_console) m_console->appendLog(text, type, QStringLiteral("TSALab"));
@@ -498,6 +657,12 @@ void LabMainWindow::log(const QString& text, const QString& type)
 
 void LabMainWindow::closeEvent(QCloseEvent* event)
 {
+    if (m_session->analysis().isRunning())
+    {
+        QMessageBox::information(this, tr("Calcul en cours"), tr("Un calcul est en cours : annulez-le ou attendez sa fin avant de quitter."));
+        event->ignore();
+        return;
+    }
     if (!maybeSave())
     {
         event->ignore();

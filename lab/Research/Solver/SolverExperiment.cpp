@@ -19,8 +19,9 @@ bool buildSolverExperiment(const TSA::Analysis::ResultsModel& results, SolverExp
     if (!results.hasResults()) return fail("Aucun résultat de calcul valide : lancer un calcul (F5).");
     if (!adv.available || !adv.hasGlobalStiffness)
     {
-        std::string reason = "La matrice de rigidité globale n'a pas été extraite de ce calcul. "
-                             "Relancer le calcul OpenSees en extraction ADVANCED (fenêtre Analysis).";
+        std::string reason = "La matrice de rigidité globale n'a pas été extraite de ce calcul. Relancer le calcul "
+                             "avec l'export du système : Custom2D « Exporter le système K·U = F » ou OpenSees en "
+                             "extraction ADVANCED (configuration de l'analyse).";
         if (!adv.kGlobalUnavailableReason.empty()) reason += " Motif : " + adv.kGlobalUnavailableReason;
         return fail(reason);
     }
@@ -38,8 +39,18 @@ bool buildSolverExperiment(const TSA::Analysis::ResultsModel& results, SolverExp
     in.K = Matrix(n, n);
     for (std::size_t k = 0; k < adv.kGlobal.values.size(); ++k)
         in.K(adv.kGlobal.rowIndex[k], adv.kGlobal.colIndex[k]) = adv.kGlobal.values[k];
-    in.reference = adv.globalDisplacementVector(results.allDisplacements());
-    in.f = LinAlg::multiply(in.K, in.reference);
+    // Système exporté par le moteur (Custom2D) : F et U réels, dans l'ordre des équations. Sinon (OpenSees) :
+    // U relu dans les déplacements nodaux et F = K·U.
+    if (static_cast<int>(adv.displacementVector.size()) == n && static_cast<int>(adv.loadVector.size()) == n)
+    {
+        in.reference = adv.displacementVector;
+        in.f = adv.loadVector;
+    }
+    else
+    {
+        in.reference = adv.globalDisplacementVector(results.allDisplacements());
+        in.f = LinAlg::multiply(in.K, in.reference);
+    }
     in.labels.reserve(static_cast<std::size_t>(n));
     for (int e = 0; e < n; ++e) in.labels.push_back(adv.dofMap.equationLabel(e));
     in.caseName = results.caseOrComboName();
