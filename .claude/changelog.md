@@ -1,5 +1,12 @@
 # Changelog — TSALab
 
+## 2026-10-09 (fermeture de TSALab)
+
+### Fixed
+- BUG-039 (voir TSA/.claude/known-issues.md) : assertion Qt à la fermeture avec des nœuds Blueprint sélectionnés.
+  Corrigé dans l'éditeur partagé (TSA) ; ~LabMainWindow coupe aussi les connexions de ses enfants vers la fenêtre.
+  Vérifié en GUI : exemple portique, 5 nœuds sélectionnés, fermeture normale, journal sans assertion.
+
 ## 2026-10-08 (phase 8 : OpenSees dans science/, IA, débogueur, plugins)
 
 ### Added

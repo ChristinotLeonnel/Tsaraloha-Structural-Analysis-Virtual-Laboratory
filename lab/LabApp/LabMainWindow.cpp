@@ -129,7 +129,14 @@ LabMainWindow::LabMainWindow(QWidget* parent)
     log(tr("%1 initialisé — base commune TSA (modèle, viewport, commandes, panneaux).").arg(TSA::Product::name()));
 }
 
-LabMainWindow::~LabMainWindow() = default;
+LabMainWindow::~LabMainWindow()
+{
+    // Les enfants QObject (assistant IA, éditeur Blueprint, docks, viewport…) sont détruits APRÈS ce
+    // destructeur, par ~QObject : un signal émis pendant leur destruction vers une lambda de cette fenêtre
+    // s'exécuterait sur un objet déjà détruit (assertion Qt, BUG-039). Même règle que MainWindow (TSA).
+    for (QObject* child : findChildren<QObject*>())
+        QObject::disconnect(child, nullptr, this, nullptr);
+}
 
 // -----------------------------------------------------------------------------
 // Construction de l'interface
