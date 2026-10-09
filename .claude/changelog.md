@@ -1,5 +1,11 @@
 # Changelog — TSALab
 
+## 2026-10-09 (Claude Code co-ingénieur par MCP)
+
+### Added
+- AutomationServer démarré par LabMainWindow (canal « tsaraloha-tsalab ») et pont `tsaraloha-mcp.exe` construit à côté
+  de TSALab.exe (TSA/docs/MCP.md). Vérifié : portique construit, calculé et lu par le pont sur TSALab ouvert.
+
 ## 2026-10-09 (fermeture de TSALab)
 
 ### Fixed

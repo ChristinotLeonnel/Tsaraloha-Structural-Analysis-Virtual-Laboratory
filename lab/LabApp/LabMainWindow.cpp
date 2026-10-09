@@ -7,6 +7,7 @@
 
 #include "AI/Core/AIOrchestrator.h"
 #include "Analysis/AnalysisController.h"
+#include "Automation/AutomationServer.h"
 #include "Analysis/Engine/AnalysisModel.h"
 #include "Analysis/ResultsModel.h"
 #include "App/ProductInfo.h"
@@ -249,7 +250,7 @@ void LabMainWindow::createAssistant()
 {
     // Assistant de co-ingénierie (composants partagés avec TSA) : sources = modèle, résultats et sélection.
     m_ai = new TSA::AI::AIOrchestrator(this);
-    m_ai->setSourcesProvider([this] {
+    const auto sourcesProvider = [this] {
         TSA::AI::EngineeringSources src;
         src.model = &m_session->model();
         const auto results = m_session->analysis().results();
@@ -266,7 +267,27 @@ void LabMainWindow::createAssistant()
         add("column", sel.columns);
         add("node", sel.nodes);
         return src;
+    };
+    m_ai->setSourcesProvider(sourcesProvider);
+
+    // Serveur d'automatisation (pont MCP : Claude Code co-ingénieur sur le projet ouvert, TSA/docs/MCP.md).
+    m_automation = new TSA::Automation::AutomationServer(m_session.get(), this);
+    m_automation->setSourcesProvider(sourcesProvider);
+    m_automation->setProjectInfoProvider([this] {
+        const auto& pm = m_session->project();
+        QJsonObject o { { "project", pm.hasFilePath() ? QFileInfo(pm.currentFilePath()).completeBaseName() : tr("Nouveau modèle") } };
+        if (pm.hasFilePath()) o["path"] = pm.currentFilePath();
+        return o;
     });
+    connect(m_automation, &TSA::Automation::AutomationServer::projectModified, this, [this] {
+        updateHistoryActions();
+        m_view->update();
+    });
+    connect(m_automation, &TSA::Automation::AutomationServer::logMessage, this,
+            [this](const QString& text, const QString& type) { log(text, type); });
+    QString automationError;
+    if (!m_automation->start(TSA::Automation::AutomationServer::defaultName(), &automationError))
+        log(tr("Serveur d'automatisation (MCP) indisponible : %1").arg(automationError), QStringLiteral("WARN"));
     m_aiDock = new TSA::UI::AICoEngineeringDock(m_ai, this);
     m_aiDock->setObjectName("LabAssistant");
     addDockWidget(Qt::RightDockWidgetArea, m_aiDock);

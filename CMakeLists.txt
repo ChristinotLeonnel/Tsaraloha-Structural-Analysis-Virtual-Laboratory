@@ -111,6 +111,10 @@ if(MSVC)
 endif()
 add_dependencies(TSALab tsalab_sample_plugin)
 
+# Pont MCP (tsaraloha-mcp.exe) : Claude Code pilote TSALab ouvert (TSA/docs/MCP.md)
+tsaraloha_add_mcp_bridge(TSALab_Mcp)
+add_dependencies(TSALab TSALab_Mcp)
+
 # =============================================================================
 # Tests du laboratoire (la base commune est couverte par les tests de TSA)
 # =============================================================================

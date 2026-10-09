@@ -36,6 +36,10 @@ namespace TSA::AI
 {
 class AIOrchestrator;
 }
+namespace TSA::Automation
+{
+class AutomationServer;
+}
 namespace TSA::UI
 {
 class AICoEngineeringDock;
@@ -115,6 +119,7 @@ private:
     TSA::UI::ResultsDockWidget* m_resultsDock = nullptr;
     TSA::UI::AnalysisDataDock* m_dataDock = nullptr;
     TSA::AI::AIOrchestrator* m_ai = nullptr;
+    TSA::Automation::AutomationServer* m_automation = nullptr;   ///< pont MCP (Claude Code), TSA/docs/MCP.md
     TSA::UI::AICoEngineeringDock* m_aiDock = nullptr;
     TSA::UI::AIRuntimeDialog* m_aiDialog = nullptr;
     TSA::UI::ModelTreeWidget* m_tree = nullptr;
