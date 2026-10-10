@@ -119,7 +119,7 @@ add_dependencies(TSALab TSALab_Mcp)
 # Outils et exemples du SDK (TSA/docs/SDK.md : tsa3d-validate, tsa-template, module d'exemple) et paquet
 # distribuable autonome : cible package_TSALab → <build>/dist/TSALab (TSA/docs/DEPLOYMENT.md).
 tsaraloha_add_sdk_tools(TSALab TSALab_Model ${LAB_PRODUCT_DIR})
-tsaraloha_add_package_target(TSALab "TSALab.exe;tsaraloha-mcp.exe;tsa3d-validate.exe;tsa-template.exe;TSALabThumbnailProvider.dll")
+tsaraloha_add_package_target(TSALab "TSALab.exe;tsaraloha-mcp.exe;tsa3d-validate.exe;tsa-template.exe;tsa-mesh.exe;TSALabThumbnailProvider.dll")
 
 # =============================================================================
 # Tests du laboratoire (la base commune est couverte par les tests de TSA)
