@@ -29,6 +29,9 @@ inline constexpr char kAboutIntroHtml[] =
     "expérimenter, inspecter, tester, valider et comprendre. Il est construit sur la base technique de TSA "
     "(logiciel de production) dont il partage le code : modélisation, viewport 3D et moteurs de calcul.</p>";
 inline constexpr char kPlatformLabel[] = "Base technique commune avec TSA - Plateforme de Conception & Calcul de Structures 3D";
+// Documentation en ligne : aucun site officiel configuré pour TSALab. Vide : les boutons Aide
+// l'indiquent au lieu d'ouvrir une adresse (src/Help/HelpTopics de TSA).
+inline constexpr char kDocsBaseUrl[] = "";
 inline constexpr char kHttpUserAgent[] = "TSALab-Structural-Laboratory";
 inline constexpr char kIfcOriginatingSystem[] = "TSALab - Tsaraloha Structural Analysis Laboratory";
 inline constexpr char kPreviewBadge[] = "TSALab";
