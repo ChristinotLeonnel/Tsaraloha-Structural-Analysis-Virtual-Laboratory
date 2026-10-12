@@ -30,6 +30,7 @@ class ProjectSession;
 }
 namespace TSA::Viewer
 {
+class MeshVisual;
 class SelectionManager;
 }
 namespace TSA::AI
@@ -52,6 +53,9 @@ class ResultsDockWidget;
 class DisplayMenus;
 class BlueprintEditor;
 class LogConsoleDock;
+class MeshController;
+class MeshQualityPanel;
+class MeshSettingsPanel;
 class ModelTreeWidget;
 class PropertyPanel;
 class ViewportContainer;
@@ -86,6 +90,10 @@ private:
     void createMenus();
     void createStatusBar();
     void createAssistant();
+    void createMesh();
+    void createMeshMenu();
+    void refreshMeshOverlay();
+    void showMeshQuality();
     void showPlugins();
 
     void newProject();
@@ -133,6 +141,16 @@ private:
     TSA::UI::LogConsoleDock* m_console = nullptr;
     QDockWidget* m_treeDock = nullptr;
     QDockWidget* m_propertiesDock = nullptr;
+
+    // Maillage (Gmsh) : composants partagés avec TSA (TSA/src/UI/Mesh, TSA/src/Viewer/MeshVisual)
+    TSA::UI::MeshController* m_mesh = nullptr;
+    TSA::UI::MeshSettingsPanel* m_meshPanel = nullptr;
+    TSA::UI::MeshQualityPanel* m_meshQuality = nullptr;
+    QDockWidget* m_meshDock = nullptr;
+    QDockWidget* m_meshQualityDock = nullptr;
+    std::unique_ptr<TSA::Viewer::MeshVisual> m_meshVisual;
+    QAction* m_actMeshShow = nullptr;
+    QAction* m_actMeshResults = nullptr;
 
     QAction* m_actNew = nullptr;
     QAction* m_actOpen = nullptr;

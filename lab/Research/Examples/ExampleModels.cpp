@@ -4,6 +4,9 @@
 #include "Model/Load/LoadCase.h"
 #include "Model/Load/MemberLoad.h"
 #include "Model/Load/NodalLoad.h"
+#include "Model/Load/SurfaceLoad.h"
+#include "Model/Slab.h"
+#include "Mesh/MeshProject.h"
 #include "Analysis/Engine/AnalysisContext.h"
 
 #include <QJsonDocument>
@@ -69,6 +72,49 @@ void buildSimplySupportedPoint(Model& model)
     QJsonObject settings = ctx.settingsFor("custom2d");
     settings.insert(QStringLiteral("exportSystem"), true);
     ctx.engineSettings["custom2d"] = settings;
+    model.setAnalysisSettingsJson(QJsonDocument(ctx.toJson()).toJson(QJsonDocument::Compact).toStdString());
+}
+
+// Plaque carrée de 6 m, e = 0,20 m (béton E = 31 GPa, ν = 0,2), appui simple dur sur les quatre bords, q = 10 kN/m²
+// (cas FEA-07 du banc) : référence de Mindlin (squarePlateHardSupport). Réglages enregistrés : OpenSees, maillage du
+// projet transmis, poids propre exclu ; paramètres de maillage (quadrangles, h = 0,25 m) enregistrés sans maillage :
+// l'utilisateur génère le maillage (Gmsh) puis calcule.
+void buildSquarePlate(Model& model)
+{
+    const int a = model.addNode(0, 0, 0, "", "A"), b = model.addNode(6, 0, 0, "", "B");
+    const int c = model.addNode(6, 6, 0, "", "C"), d = model.addNode(0, 6, 0, "", "D");
+    const int sl = model.addSlab({ a, b, c, d }, 0.2, "Plaque");
+    Material mat = Material::concreteC25_30();
+    mat.name = "Béton E = 31 GPa";
+    mat.E = 31.0e9, mat.nu = 0.2, mat.density = 2500.0;
+    mat.syncMechanical();
+    model.getSlab(sl)->setMaterial(mat);
+    std::vector<SurfaceEdgeSupport> sups(4);
+    for (int e = 0; e < 4; ++e)
+    {
+        sups[e].edge = e;
+        sups[e].name = "appui simple dur";
+        for (int k = 0; k < 3; ++k) sups[e].fixed[k] = true;
+        sups[e].fixed[e % 2 == 0 ? 4 : 3] = true;   // rotation tangentielle au bord bloquée
+    }
+    model.getSlab(sl)->setEdgeSupports(sups);
+    const int lc = addCase(model, "q uniforme");
+    SurfaceLoad q;
+    q.surfaceId = sl, q.loadCaseId = lc, q.value = 10.0, q.name = "q = 10 kN/m²";
+    model.loadManager().addSurfaceLoad(q);
+
+    auto mp = TSA::Mesh::MeshProject::load(model);
+    auto& g = mp.settings.global;
+    g.globalSize = 0.25, g.mesh3D = false, g.recombine = true;
+    g.nearSupports.enabled = g.nearPointLoads.enabled = g.nearOpenings.enabled = g.nearConnections.enabled = g.nearSectionChanges.enabled = false;
+    g.globalSize *= 0.25 / g.effectiveSize();
+    mp.store(model);
+
+    TSA::Analysis::AnalysisContext ctx;
+    ctx.engineId = "opensees";
+    ctx.common.includeSelfWeight = false;
+    ctx.common.useGeneratedMesh = true;
+    ctx.loadCaseIds = { lc };
     model.setAnalysisSettingsJson(QJsonDocument(ctx.toJson()).toJson(QJsonDocument::Compact).toStdString());
 }
 
@@ -170,6 +216,10 @@ const std::vector<ExampleInfo>& catalog()
         { "warren-truss", "Treillis de Warren",
           "6 panneaux de 2 m, hauteur 1,5 m, barres articulées Ø 80 mm, 5 × 10 kN.",
           "Méthode des nœuds : efforts normaux seuls" },
+        { "square-plate", "Plaque carrée — appui simple dur",
+          "Dalle 6 × 6 m, e = 0,20 m, appui simple dur sur les 4 bords, q = 10 kN/m², OpenSees (coques ShellMITC4), poids propre exclu. "
+          "Maillage → Générer le maillage, puis Calculer.",
+          "w = α·q·a⁴/D + β·q·a²/(κ·G·e) (Mindlin) ; Σ R = q·a²" },
         { "frame-3d", "Portique spatial",
           "2 × 1 travées (5 m × 4 m), un niveau de 3,5 m, poteaux HEB 200, poutres IPE 300.",
           "Comportement 3D : torsion, flexion bi-axiale, modes propres" },
@@ -186,6 +236,7 @@ bool build(const std::string& id, Model& model)
     else if (id == "portal") buildPortal(model);
     else if (id == "warren-truss") buildWarrenTruss(model);
     else if (id == "frame-3d") buildFrame3D(model);
+    else if (id == "square-plate") buildSquarePlate(model);
     else return false;
     return true;
 }

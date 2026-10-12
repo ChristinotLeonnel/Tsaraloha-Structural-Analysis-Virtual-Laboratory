@@ -61,13 +61,14 @@ La logique scientifique est toujours séparée de l'interface (`Research`, `scie
 | `Analysis/ResultsExport` | exports des données d'analyse, dont les vecteurs F/U et les transformations local / global | dock « Données d'analyse » (TSA et TSALab) |
 | `Validation/BenchmarkSuite` : `CheckOutcome::convergence` | série de convergence en maillage structurée | espace Validation, rapport JSON |
 | `Automation/CommandRegistry` | commandes de propriétés, de lecture d'efforts et de comparaison | console, Blueprint, MCP (TSA et TSALab) |
+| `UI/Mesh/MeshAnalysisBridge`, `AnalysisManagerPanel::setContextPreparer` | maillage du projet transmis au calcul (contrôles de compatibilité, choix explicite si obsolète) | fenêtres de TSA et de TSALab |
 
 ## 4. Séparation des données
 
 | Nature | Où |
 | :--- | :--- |
 | modèle physique et analytique | `TSA::Model::Model`, `BimModel` (identifiants stables, liens physique ↔ analytique) |
-| modèle de maillage | `FeMesh` (TSA) : généré par Gmsh pour le calcul des coques, y compris depuis TSALab (banc FEA) ; pas d'interface de maillage dans TSALab (voir `SYNC_TSA_TSALAB.md`) |
+| modèle de maillage | `FeMesh` (TSA), généré par Gmsh (`MeshController`, partagé) ; menu Maillage de TSALab ; transmis au calcul par `UI/Mesh/MeshAnalysisBridge` (partagé avec TSA) |
 | données du solveur | `AnalysisModel`, scripts et fichiers du moteur (OpenSees) |
 | résultats | `ResultsModel`, indexé par identifiants TSA ; jamais enregistré dans le projet |
 | références analytiques | `ReferenceComparison`, enregistrée dans l'expérience ; jamais dans le projet |
@@ -93,7 +94,7 @@ Ajouter une commande, c'est donc ajouter un nœud, qui est aussi disponible dans
 | sélectionner | — | **manque** : la sélection appartient à la couche graphique ; les nœuds désignent les objets par identifiant (sorties `id` des nœuds de création) |
 | affecter des propriétés | `cmd.model.set_section`, `cmd.model.set_support` | fait |
 | appliquer des charges | `cmd.loads.create_case`, `cmd.loads.add_nodal`, `cmd.loads.add_uniform` | fait |
-| mailler | — | **manque** : le maillage interactif est dans la fenêtre de TSA ; le maillage des coques est fait au calcul |
+| mailler | — | **manque** : le maillage existe dans l'interface (menu Maillage) mais pas encore comme commande du registre |
 | lancer une analyse | `cmd.analysis.run` (moteur, axe, système, poids propre) | fait |
 | extraire des résultats | `cmd.results.summary`, `node_displacement`, `node_reaction`, `member_forces`, `cmd.query.bar` | fait |
 | comparer des valeurs | `cmd.compare.values` (tolérance mixte ; écart relatif absent si réf. ≈ 0) ; `math.compare` | fait |

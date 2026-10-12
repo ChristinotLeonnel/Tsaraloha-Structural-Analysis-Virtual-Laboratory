@@ -73,6 +73,9 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
 * **Première expérience de référence** : poutre bi-appuyée avec force centrale. La référence d'Euler-Bernoulli est
   appliquée au modèle de l'utilisateur après vérification de ses hypothèses : réactions, flèche, moment et effort
   tranchant comparés. La même expérience existe entièrement en nœuds Blueprint.
+* **Maillage** (menu Maillage) : paramètres, génération Gmsh, affichage et qualité du maillage, déplacements sur le
+  maillage ; dalles calculées en coques OpenSees. Exemple « Plaque carrée — appui simple dur », comparé à la référence de
+  Mindlin.
 * **Laboratoire matriciel** (dock « Données d'analyse ») : DDL, K globale, matrices élémentaires, vecteurs F et U,
   transformations local / global, exports CSV des seules données fournies par le moteur.
 * **Affichage** : échelles des annotations et des charges, profils d'affichage, diagnostic (composant partagé avec TSA).
@@ -296,7 +299,7 @@ TSALab intègre une architecture de calcul découplée (`AnalysisManager`) perme
 ## 🧭 Interface du laboratoire
 
 TSALab a sa propre fenêtre (`lab/LabApp/LabMainWindow`), distincte de celle de TSA (pas de ruban, pas d'AppShell) :
-menus **Fichier, Exemples, Édition, Affichage, Modèle, Blueprint, Analyse, IA, Aide**, barre d'outils de modélisation
+menus **Fichier, Exemples, Édition, Affichage, Modèle, Maillage, Blueprint, Analyse, IA, Aide**, barre d'outils de modélisation
 (Sélection, Nœud, Poutre, Poteau, Barre, Calculer) et onglets d'espaces **Accueil, Modèle, Blueprint, Analyse,
 Résultats, Recherche, Validation, Expériences**.
 Documentation : architecture, API des solveurs, validation, feuille de route et historique des synchronisations avec
@@ -311,9 +314,9 @@ données d'analyse (K, F, U), assistant IA. Un seul projet par fenêtre (voir `d
 
 | Exécutable | Contenu | État au 12/10/2026 |
 | :--- | :--- | :--- |
-| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints (dont l'expérience en nœuds), L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences, L11 première expérience complète, L12 laboratoire matriciel, L13 convergence en maillage | 10 / 10 |
+| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints (dont l'expérience en nœuds), L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences, L11 première expérience complète, L12 laboratoire matriciel, L13 convergence en maillage, L14 plaque maillée | 11 / 11 |
 | `tsalab_science_tests` | S1–S6 : algèbre linéaire, solveurs plans, MetDeDeplacement, benchmarks plans, OpenSees ≈ MetDeDeplacement | 6 / 6 |
-| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation, commandes… | 389 tests dans TSA |
+| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation, commandes… | 390 tests dans TSA |
 
 ```powershell
 cmake --build --preset ninja-debug

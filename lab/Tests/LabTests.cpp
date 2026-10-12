@@ -22,6 +22,10 @@
 #include "Research/Experiments/ExperimentJournal.h"
 #include "Research/Reference/AnalyticalReference.h"
 #include "Research/Validation/MeshConvergence.h"
+#include "Mesh/MeshGenerator.h"
+#include "Mesh/MeshProject.h"
+#include "Mesh/Solvers/OpenSeesMeshAdapter.h"
+#include "Model/Slab.h"
 #include "Analysis/ResultsExport.h"
 #include "Blueprint/BlueprintScript.h"
 
@@ -53,7 +57,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 10;
+constexpr int kLabTests = 11;
 
 bool runSuite_Lab(int& passed)
 {
@@ -171,7 +175,7 @@ bool runSuite_Lab(int& passed)
         int planar = 0;
         for (const auto& ex : Examples::catalog())
         {
-            if (ex.id == "frame-3d") continue;   // portique spatial : non plan
+            if (ex.id == "frame-3d" || ex.id == "square-plate") continue;   // portique spatial, plaque : hors du moteur 2D
             TSA::Project::ProjectSession session;
             TEST_CHECK(Examples::build(ex.id, session.model()), "Test L7: exemple construit (" << ex.id << ")");
             const auto r = TSA::Automation::executeCommandLine(reg, session, "analysis.run engine=custom2d axis=plan export_system=true");
@@ -630,6 +634,53 @@ bool runSuite_Lab(int& passed)
                        "Test L13: FEA-07 — écart décroissant, ordre observé ≈ 2, extrapolation de Richardson sur la référence de Mindlin");
         }
         std::cout << "[PASS] Test L13: convergence en maillage (série du banc, ordre observé, Richardson, chaîne Gmsh → OpenSees)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L14 : plaque dans TSALab — exemple maillé (Gmsh, paramètres enregistrés), coques OpenSees, référence de Mindlin
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        TSA::Project::ProjectSession s;
+        TEST_CHECK(Examples::build("square-plate", s.model()) && s.analysis().restoreContextFromModel(), "Test L14: exemple de plaque construit, réglages relus");
+        const auto mp = TSA::Mesh::MeshProject::load(s.model());
+        TEST_CHECK(!mp.hasMesh && mp.settings.global.recombine && std::abs(mp.settings.global.effectiveSize() - 0.25) < 1e-9 &&
+                       s.analysis().context().common.useGeneratedMesh && s.analysis().context().engineId == "opensees",
+                   "Test L14: paramètres de maillage (quadrangles, h = 0,25 m) et de calcul enregistrés, sans maillage");
+        // Sans maillage transmis : la référence refuse (dalle non calculée)
+        const auto noMesh = analyticalReference(s.model(), s.analysis().context(), nullptr);
+        TEST_CHECK(!noMesh.applicable && noMesh.violations.join(" ").contains("maillage non transmis"), "Test L14: sans maillage — référence non appliquée, raison nommée");
+
+        const auto g = TSA::Mesh::MeshGeometry::extract(s.model());
+        const auto mesh = TSA::Mesh::MeshGenerator::generate(g, mp.settings);
+        const auto* engine = s.analysis().registry().engine("opensees");
+        TEST_CHECK(engine && engine->availability().available, "Test L14: OpenSees disponible");
+        const auto compat = TSA::Mesh::OpenSeesMeshAdapter::check(mesh.mesh, g, "OpenSees", engine->capabilities(), 3000000, &s.model());
+        TEST_CHECK(!compat.blocking() && compat.surfaces.mesh.quads == 576, "Test L14: 576 quadrangles transmissibles aux coques OpenSees");
+        auto ctx = s.analysis().context();
+        ctx.surfaces = compat.surfaces;
+        ctx.surfaces.meshStamp = "L14";
+        ctx.meshLabel = "maillage Gmsh h = 0,25 m (test L14)";
+        const auto prepared = s.analysis().prepare(ctx);
+        TEST_CHECK(prepared.canRun() && !prepared.validation.hasWarnings(), "Test L14: modèle maillé valide, sans avertissement");
+        const auto run = s.analysis().runBlocking(ctx, prepared);
+        TEST_CHECK(run.success, "Test L14: calcul des coques");
+        const auto ref = analyticalReference(s.model(), ctx, s.analysis().results().get());
+        for (const auto& c : ref.checks)
+            std::cout << "  plaque — " << c.label.toStdString() << " : " << c.computed << " / " << c.reference << " " << c.unit.toStdString() << " (écart relatif "
+                      << c.relError * 100 << " %)" << std::endl;
+        TEST_CHECK(ref.problemId == "square-plate-hard-support" && ref.applicable && ref.checks.size() == 2 && ref.passed() && ref.checks[0].relError < 1e-3,
+                   "Test L14: flèche et Σ réactions conformes à la référence de Mindlin (écart < 0,1 % à h = 0,25 m)");
+
+        // Hors domaine : appui mou (rotation tangentielle libre) et poids propre — raisons nommées
+        auto soft = s.model().getSlab(s.model().slabs().begin()->first)->edgeSupports();
+        for (auto& sp : soft) sp.fixed[3] = sp.fixed[4] = false;
+        s.model().getSlab(s.model().slabs().begin()->first)->setEdgeSupports(soft);
+        TEST_CHECK(analyticalReference(s.model(), ctx, nullptr).violations.join(" ").contains("rotation tangentielle libre"), "Test L14: appui mou — hors domaine");
+        auto weighted = ctx;
+        weighted.common.includeSelfWeight = true;
+        TEST_CHECK(analyticalReference(s.model(), weighted, nullptr).violations.join(" ").contains("poids propre"), "Test L14: poids propre — hors domaine");
+        std::cout << "[PASS] Test L14: plaque maillée dans TSALab (Gmsh → coques OpenSees), référence de Mindlin" << std::endl;
         ++passed;
     }
     return true;

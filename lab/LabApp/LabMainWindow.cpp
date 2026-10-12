@@ -34,6 +34,13 @@
 #include "UI/Dock/AnalysisDataDock.h"
 #include "UI/Dock/LogConsoleDock.h"
 #include "UI/Dock/ResultsDockWidget.h"
+#include "UI/Mesh/MeshAnalysisBridge.h"
+#include "UI/Mesh/MeshController.h"
+#include "UI/Mesh/MeshDialogs.h"
+#include "UI/Mesh/MeshSettingsPanel.h"
+#include "Mesh/MeshGenerator.h"
+#include "Mesh/MeshResultField.h"
+#include "Viewer/MeshVisual.h"
 #include "UI/ModelTree/ModelTreeWidget.h"
 #include "UI/Properties/PropertyPanel.h"
 #include "UI/Ruler/ViewportContainer.h"
@@ -44,6 +51,7 @@
 #include "Viewer/ViewManager.h"
 
 #include <QAction>
+#include <QPointer>
 #include <QCloseEvent>
 #include <QDir>
 #include <QDockWidget>
@@ -58,6 +66,9 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
+
+#include <cmath>
+#include <optional>
 #include <QToolBar>
 
 #include <algorithm>
@@ -94,6 +105,7 @@ LabMainWindow::LabMainWindow(QWidget* parent)
     createWorkspaces();
     createDocks();
     createAssistant();
+    createMesh();
     createActions();
     createMenus();
     createStatusBar();
@@ -128,7 +140,7 @@ LabMainWindow::LabMainWindow(QWidget* parent)
                 const QString project = m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString();
                 QString error;
                 // Référence analytique : reconnue dans le modèle réel, hypothèses vérifiées, comparée aux résultats
-                const auto reference = TSALab::Research::simplySupportedCentralLoad(m_session->model(), context, success ? results.get() : nullptr);
+                const auto reference = TSALab::Research::analyticalReference(m_session->model(), context, success ? results.get() : nullptr);
                 TSALab::Research::ExperimentJournal journal(TSALab::Research::ExperimentJournal::directoryForProject(project));
                 const auto rec = journal.recordAnalysis(m_session->model(), &m_session->grids(), context, success, message,
                                                         success ? results.get() : nullptr, a.registry(), project, &prepared, &error, reference.toJson());
@@ -164,6 +176,10 @@ LabMainWindow::LabMainWindow(QWidget* parent)
             [this](const QString& text, const QString& type) { log(text, type); });
     connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::settingsChanged, this, &LabMainWindow::updateTitle);
     m_analysisPanel->setSelectionProvider([this] { return m_selection->selectedElements(); });
+    // Maillage du projet transmis au calcul (coques, barres subdivisées) : même logique que TSA, choix explicite si obsolète
+    m_analysisPanel->setContextPreparer([this](TSA::Analysis::AnalysisContext& context, const TSA::Analysis::AnalysisEngine& engine) {
+        return TSA::UI::applyMeshToAnalysis(m_mesh, context, engine, this, [this](const QString& text, const QString& type) { log(text, type); });
+    });
 
     m_defaultLayout = saveState();
     QSettings s = labSettings();
@@ -516,6 +532,8 @@ void LabMainWindow::createMenus()
     bar->addAction(fit);
 
     // --- Blueprint
+    createMeshMenu();
+
     QMenu* bp = menuBar()->addMenu(tr("&Blueprint"));
     bp->addAction(tr("Nouveau Blueprint"), this, [this] {
         m_blueprint->newBlueprint();
@@ -759,6 +777,8 @@ void LabMainWindow::afterProjectLoaded()
     m_properties->clearProperties();
     m_experiments->setDirectory(TSALab::Research::ExperimentJournal::directoryForProject(
         m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString()));
+    m_mesh->setModel(&m_session->model());   // maillage et paramètres enregistrés dans le projet
+    m_meshPanel->refresh();
     updateTitle();
     updateHistoryActions();
 }
@@ -845,6 +865,7 @@ void LabMainWindow::onResultsChanged()
     m_diagram->setResultsModel(results);
     m_properties->setResultsModel(results);
     m_solverLab->setResults(results);
+    if (m_actMeshResults && m_actMeshResults->isChecked()) refreshMeshOverlay();
     if (results)
     {
         if (m_view->resultsVisual()) m_resultsDock->syncFromVisualManager(m_view->resultsVisual());
@@ -867,6 +888,156 @@ void LabMainWindow::onResultsBecameStale()
     m_solverLab->setResults(results);
     m_view->update();
     log(tr("Modèle modifié depuis le dernier calcul : résultats obsolètes, relancez l'analyse."), QStringLiteral("WARN"));
+}
+
+void LabMainWindow::createMesh()
+{
+    m_mesh = new TSA::UI::MeshController(this);
+    m_meshPanel = new TSA::UI::MeshSettingsPanel(m_mesh, this);
+    m_meshDock = new QDockWidget(tr("Paramètres du maillage"), this);
+    m_meshDock->setObjectName(QStringLiteral("LabMeshSettings"));
+    m_meshDock->setWidget(m_meshPanel);
+    addDockWidget(Qt::RightDockWidgetArea, m_meshDock);
+    m_meshDock->hide();
+    m_meshQuality = new TSA::UI::MeshQualityPanel(this);
+    m_meshQualityDock = new QDockWidget(tr("Qualité du maillage"), this);
+    m_meshQualityDock->setObjectName(QStringLiteral("LabMeshQuality"));
+    m_meshQualityDock->setWidget(m_meshQuality);
+    addDockWidget(Qt::BottomDockWidgetArea, m_meshQualityDock);
+    m_meshQualityDock->hide();
+    // Contexte et vue lus à chaque usage : la vue OCCT n'existe qu'après le premier affichage
+    const QPointer<OccView> view(m_view);
+    m_meshVisual = std::make_unique<TSA::Viewer::MeshVisual>([view]() { return view ? view->context() : Handle(AIS_InteractiveContext)(); },
+                                                             [view]() { return view ? view->view() : Handle(V3d_View)(); });
+
+    connect(m_meshPanel, &TSA::UI::MeshSettingsPanel::qualityRequested, this, &LabMainWindow::showMeshQuality);
+    connect(m_meshQuality, &TSA::UI::MeshQualityPanel::issueActivated, this, [this](int element, int node) {
+        if (!m_mesh->hasMesh()) return;
+        if (!m_actMeshShow->isChecked()) m_actMeshShow->setChecked(true);
+        m_meshVisual->highlight(element, node, true);
+    });
+    connect(m_mesh, &TSA::UI::MeshController::generationFinished, this, [this](bool preview, bool ok, const QString& message) {
+        log((preview ? tr("Aperçu du maillage (Gmsh) : %1") : tr("Maillage généré (Gmsh) : %1")).arg(message), ok ? QStringLiteral("SYS") : QStringLiteral("ERROR"));
+        if (const auto* rec = preview ? m_mesh->previewRecord() : &m_mesh->project().record; ok && rec)
+            for (const auto& w : rec->warnings) log(QString::fromStdString(w), QStringLiteral("WARN"));
+        statusBar()->showMessage(TSA::UI::meshStatusText(*m_mesh), 8000);
+        if (ok && !preview)
+        {
+            showMeshQuality();
+            m_actMeshShow->setChecked(true);
+        }
+        refreshMeshOverlay();
+    });
+    connect(m_mesh, &TSA::UI::MeshController::previewChanged, this, &LabMainWindow::refreshMeshOverlay);
+    connect(m_mesh, &TSA::UI::MeshController::meshChanged, this, &LabMainWindow::refreshMeshOverlay);
+    connect(m_mesh, &TSA::UI::MeshController::settingsCommitted, this, &LabMainWindow::updateTitle);
+    m_mesh->setModel(&m_session->model());
+}
+
+void LabMainWindow::createMeshMenu()
+{
+    QMenu* menu = menuBar()->addMenu(tr("Ma&illage"));
+    menu->addAction(tr("Paramètres du maillage…"), this, [this] {
+        m_meshPanel->refresh();
+        m_meshDock->show();
+        m_meshDock->raise();
+    });
+    menu->addAction(tr("Générer le maillage (Gmsh)"), this, [this] {
+        if (!TSA::Mesh::meshEngineCapabilities().available)
+        {
+            QMessageBox::warning(this, tr("Maillage"), QString::fromStdString(TSA::Mesh::meshEngineCapabilities().unavailableReason));
+            return;
+        }
+        if (m_session->model().nodes().empty())
+        {
+            QMessageBox::information(this, tr("Maillage"), tr("Le modèle est vide. Ajoutez des éléments avant de générer le maillage."));
+            return;
+        }
+        if (!m_mesh->busy()) m_mesh->generate(false);
+    });
+    m_actMeshShow = menu->addAction(tr("Afficher le maillage"));
+    m_actMeshShow->setCheckable(true);
+    connect(m_actMeshShow, &QAction::toggled, this, &LabMainWindow::refreshMeshOverlay);
+    m_actMeshResults = menu->addAction(tr("Déplacements sur le maillage"));
+    m_actMeshResults->setCheckable(true);
+    m_actMeshResults->setToolTip(tr("Couleurs et déformée : valeurs calculées par le moteur sur ce maillage, sans extrapolation"));
+    connect(m_actMeshResults, &QAction::toggled, this, [this](bool on) {
+        if (on && !m_actMeshShow->isChecked()) m_actMeshShow->setChecked(true);
+        else refreshMeshOverlay();
+    });
+    menu->addAction(tr("Qualité du maillage"), this, &LabMainWindow::showMeshQuality);
+    menu->addSeparator();
+    menu->addAction(tr("Supprimer le maillage"), this, [this] {
+        if (m_mesh->hasMesh() &&
+            QMessageBox::question(this, tr("Supprimer le maillage"), tr("Supprimer le maillage du projet ? Les paramètres sont conservés.")) == QMessageBox::Yes)
+            m_mesh->clearMesh();
+    });
+}
+
+void LabMainWindow::showMeshQuality()
+{
+    const bool has = m_mesh->hasMesh();
+    QString context = tr("Maillage du projet");
+    if (has)
+    {
+        const auto& rec = m_mesh->project().record;
+        context = tr("%1 %2 — %3").arg(QString::fromStdString(rec.mesher), QString::fromStdString(rec.mesherVersion), QString::fromStdString(rec.generated));
+        if (m_mesh->stale()) context += tr(" — OBSOLÈTE : géométrie modifiée depuis la génération");
+    }
+    m_meshQuality->setReport(m_mesh->quality(), has ? &m_mesh->project().mesh : nullptr, context);
+    m_meshQualityDock->show();
+    m_meshQualityDock->raise();
+}
+
+void LabMainWindow::refreshMeshOverlay()
+{
+    if (!m_meshVisual || !m_mesh) return;
+    if (const auto* preview = m_mesh->preview())
+    {
+        m_meshVisual->show(*preview, TSA::Viewer::MeshVisual::Mode::Preview);
+        return;
+    }
+    if (!m_actMeshShow || !m_actMeshShow->isChecked() || !m_mesh->hasMesh())
+    {
+        m_meshVisual->clear();
+        return;
+    }
+    const auto& mesh = m_mesh->project().mesh;
+    std::optional<TSA::Mesh::MeshResultField> displacement;
+    if (m_actMeshResults->isChecked())
+    {
+        const auto results = m_session->analysis().results();
+        if (!results || !results->isValid())
+            statusBar()->showMessage(tr("Déplacements sur le maillage : aucun résultat valide (lancer le calcul)"), 6000);
+        else
+        {
+            // Uniquement des valeurs calculées par le moteur sur ce maillage (empreinte du maillage comparée)
+            const auto& rec = m_mesh->project().record;
+            const auto set = TSA::Mesh::ResultsModelMeshAdapter(m_session->model(), *results, rec.generated + "|" + rec.settingsHash).extract(mesh);
+            if (const auto* f = set.find("Déplacement")) displacement = *f;
+            for (const auto& n : set.notes) log(QString::fromStdString(n), QStringLiteral("WARN"));
+            if (!displacement) log(tr("Déplacements sur le maillage : aucune valeur calculée sur ce maillage (coques non calculées ou maillage différent du calcul)."),
+                                   QStringLiteral("WARN"));
+        }
+    }
+    double scale = 1.0;
+    if (displacement)
+    {
+        // Facteur automatique : plus grand déplacement affiché à 5 % de la dimension du maillage
+        double lo[3] = { 1e300, 1e300, 1e300 }, hi[3] = { -1e300, -1e300, -1e300 };
+        for (const auto& n : mesh.nodes)
+            for (int k = 0; k < 3; ++k)
+            {
+                const double c = k == 0 ? n.x : (k == 1 ? n.y : n.z);
+                lo[k] = std::min(lo[k], c), hi[k] = std::max(hi[k], c);
+            }
+        const double size = std::sqrt((hi[0] - lo[0]) * (hi[0] - lo[0]) + (hi[1] - lo[1]) * (hi[1] - lo[1]) + (hi[2] - lo[2]) * (hi[2] - lo[2]));
+        const double umax = displacement->range().second;
+        scale = umax > 1e-15 ? 0.05 * size / umax : 1.0;
+    }
+    const auto& q = m_mesh->quality().perElementQuality;
+    m_meshVisual->show(mesh, TSA::Viewer::MeshVisual::Mode::Generated, &q, 0.1, displacement ? &*displacement : nullptr, displacement ? &*displacement : nullptr, scale);
+    m_view->update();
 }
 
 void LabMainWindow::log(const QString& text, const QString& type)

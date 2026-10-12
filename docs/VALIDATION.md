@@ -110,6 +110,29 @@ chaîne est entièrement faite de nœuds :
 7. flèche, réaction et efforts ;
 8. trois nœuds « Comparer à une référence » et verdict.
 
+### Deuxième référence : plaque carrée de Mindlin
+
+Exemple « Plaque carrée — appui simple dur » : dalle 6 × 6 m, e = 0,20 m, q = 10 kN/m², OpenSees (coques
+ShellMITC4), poids propre exclu. Parcours : Maillage ▸ Générer le maillage, puis Calculer.
+
+La référence `squarePlateHardSupport` vérifie ses hypothèses :
+- une seule dalle, formulation coque, sans ouverture ;
+- dalle carrée, horizontale, alignée sur les axes ;
+- appui dur sur les quatre bords : translations et rotation tangentielle bloquées, rotation de flexion libre, sans
+  raideur ;
+- une seule pression uniforme verticale, poids propre exclu ;
+- maillage transmis au calcul.
+
+Elle compare ensuite :
+
+| Grandeur | Référence | Tolérance |
+| :--- | :--- | :--- |
+| flèche au centre | α·q·a⁴/D + β·q·a²/(κ·G·e) (Wang et al. 2001) | 1 % (erreur de discrétisation) |
+| somme des réactions | q·a² | 1e-6 |
+
+Un appui « mou » (rotation tangentielle libre) est hors domaine, et la raison est donnée. Vérifié dans TSALab réel :
+flèche à 0,059 % de la référence (h = 0,25 m), réactions exactes. Test L14.
+
 ## 3. Journal d'expériences (espace « Expériences »)
 
 Chaque calcul est enregistré dans `lab/Research/Experiments/ExperimentJournal`, quelle que soit son origine :
@@ -151,7 +174,9 @@ Vérifié dans TSALab réel le 12/10/2026 : calcul Custom2D du portique plan enr
 | L10 | enregistrement complet, relecture, rejeu identique, copie figée modifiée refusée, calcul en échec, exécution du banc, enregistrement illisible ignoré, signal de fin pour un calcul en console |
 | L11 | première expérience complète : modèle par commandes, deux moteurs, référence analytique, hypothèses non remplies nommées, enregistrement, réouverture, journal relu |
 | L12 | laboratoire matriciel : K, F, U, DDL exportés, K·U = F, exports CSV, transformations (OpenSees avancé), refus des données absentes |
-| L13 | convergence en maillage : ordre et Richardson exacts sur une série synthétique, cas dégénérés, FEA-01 réel (Gmsh → OpenSees) |
+| L13 | convergence en maillage : ordre et Richardson exacts sur une série synthétique, cas dégénérés, FEA-01 réel (Gmsh → OpenSees), FEA-07 (ordre 2) |
+| L14 | plaque dans TSALab : exemple maillé avec ses paramètres enregistrés, coques OpenSees, référence de Mindlin, hors domaine nommé |
+| 390 (TSA) | maillage transmis au calcul par le gestionnaire d'analyse partagé, flèche conforme à la référence de Mindlin |
 | L6 (Blueprint) | expérience en nœuds : 3 comparaisons dans la tolérance, modèle reconnu par la référence, section hors catalogue arrêtée |
 | 389 (TSA) | commandes du laboratoire : section, lecture de barre, réaction, efforts, comparaison, Annuler |
 | S1–S6 | cœur scientifique : solveurs, MetDeDeplacement, 7 benchmarks plans, OpenSees ≈ MetDeDeplacement |
