@@ -22,7 +22,7 @@
   <a href="docs/AI_COENGINEERING.md"><img src="https://img.shields.io/badge/AI-Co--Engineering-8b5cf6?style=for-the-badge&logo=openai&logoColor=white" alt="AI Co-Engineering" /></a>
   <a href="https://www.microsoft.com/windows"><img src="https://img.shields.io/badge/Platform-Windows%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64" /></a>
   <a href="https://cmake.org"><img src="https://img.shields.io/badge/CMake-Ninja-064F8C?style=for-the-badge&logo=cmake&logoColor=white" alt="CMake & Ninja" /></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/Tests-212%2F212%20Passing-10b981?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests 212/212 Passing" /></a>
+  <a href="#-tests-automatisés"><img src="https://img.shields.io/badge/Tests%20TSALab-7%2F7%20%C2%B7%20science%206%2F6-10b981?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests TSALab 7/7, science 6/6" /></a>
   <a href="docs/NORMATIVE_SYSTEM.md"><img src="https://img.shields.io/badge/Eurocodes-EN%201990--1999-f59e0b?style=for-the-badge" alt="Eurocodes" /></a>
 </p>
 
@@ -33,7 +33,7 @@
   <a href="#-architecture-logicielle--source-de-vérité">Architecture</a> •
   <a href="#-fonctionnalités-majeures">Fonctionnalités</a> •
   <a href="#-ruban-principal--ergonomie-cao">Interface</a> •
-  <a href="#-tests-automatisés">Tests (212)</a> •
+  <a href="#-tests-automatisés">Tests</a> •
   <a href="#-système-dextensions-tsalib">TSALib</a> •
   <a href="#-organisation-du-dépôt">Organisation</a> •
   <a href="#-documentation-technique">Documentation</a>
@@ -56,12 +56,21 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
 
 * **Start Center laboratoire** : nouveau modèle, ouverture des projets `.tsalab` et import des modèles TSA (`.tsa`,
   jamais réécrits), exemples à solution analytique connue (console, poutres, portique, treillis, portique spatial).
-* **Rail des espaces** autour du workspace commun :
-  * **MODÈLE** — modélisation, calcul, résultats et note de calcul (identiques à TSA) ;
-  * **SOLVER LAB** — rejoue la résolution `K·U = F` du dernier calcul OpenSees (extraction ADVANCED) avec des
-    solveurs instrumentés (Gauss LU, Cholesky, gradient conjugué) : itérations, résidus, pivots (détection de
-    mécanisme), écart à OpenSees, conditionnement spectral, courbe de convergence.
-* **Suite de tests `lab`** (L1–L5) en plus des 212 tests communs.
+* **Espaces du laboratoire** autour du viewport commun :
+  * **Modèle** — modélisation, calcul, résultats et note de calcul (bibliothèques partagées avec TSA) ;
+  * **Blueprint** — programmation visuelle des expériences (nœuds typés, débogueur, exécution pas à pas) ;
+  * **Analyse** — gestionnaire d'analyse partagé (moteurs, réglages, validation, calcul en tâche de fond) ;
+  * **Résultats** — diagrammes 2D par barre ;
+  * **Recherche (SOLVER LAB)** — rejoue la résolution `K·U = F` du dernier calcul avec des solveurs instrumentés
+    (Gauss LU, Cholesky, gradient conjugué) : itérations, résidus, pivots (détection de mécanisme), écart au moteur,
+    conditionnement spectral, courbe de convergence ;
+  * **Validation** — banc de validation partagé avec TSA (27 cas, 144 vérifications) : cas de référence calculés par la
+    chaîne réelle, écarts absolu et relatif à la solution analytique ou à des résultats externes, rapports md/csv/json ;
+  * **Expériences** — journal de chaque calcul et de chaque validation (versions, moteur, modèle figé et son empreinte,
+    hypothèses, unités, statut, avertissements, résultats et provenance) et **rejeu** avec comparaison des résultats.
+* **Affichage** : échelles des annotations et des charges, profils d'affichage, diagnostic (composant partagé avec TSA).
+* **Suite de tests `lab`** (L4–L10) et tests du cœur scientifique (S1–S6), en plus des tests de la base commune
+  (dépôt TSA). Documentation du laboratoire : [`docs/`](docs/).
 
 ---
 
@@ -277,62 +286,31 @@ TSALab intègre une architecture de calcul découplée (`AnalysisManager`) perme
 
 ---
 
-## 🎀 Ruban Principal & Ergonomie CAO
+## 🧭 Interface du laboratoire
 
-TSALab combine la puissance du système fenêtré **AppShell** (Start Center et barre de titre DWM moderne) avec un **Ruban ergonomique à 8 onglets contextuels** :
+TSALab a sa propre fenêtre (`lab/LabApp/LabMainWindow`), distincte de celle de TSA (pas de ruban, pas d'AppShell) :
+menus **Fichier, Exemples, Édition, Affichage, Modèle, Blueprint, Analyse, IA, Aide**, barre d'outils de modélisation
+(Sélection, Nœud, Poutre, Poteau, Barre, Calculer) et onglets d'espaces **Accueil, Modèle, Blueprint, Analyse,
+Résultats, Recherche, Validation, Expériences**.
 
-| Onglet | Panneaux & Outils Principaux |
-| :--- | :--- |
-| **1. Accueil** | **Projet** (Nouveau, Ouvrir, Enregistrer, Enregistrer sous, Importer/Exporter IFC), **Historique** (Annuler, Rétablir, Copier, Coller), **Accès Rapide** (Sélection, Poutre, Poteau, Dalle, Calcul Statique, Résultats 3D), **Vue 3D** (Cadrer tout, Vues standards, Réinitialiser). |
-| **2. Modélisation** | **Éléments Filaires (1D)** (Poutre, Poteau, Câble, Barre générique, Treillis automatique), **Éléments Surfaciques (2D)** (Dalle, Voile, Semelle), **Nœuds & Primitives** (Placer Nœud, Cube), **Dessin Paramétrique** (Chaîne, Rectangle, Portique, Contreventement, Arc, Poteaux sur grille), **Trame & Niveaux** (Grilles 3D, Gestionnaire d'Étages). |
-| **3. Structure** | **Sections & Profilés** (Profilés métalliques I/H/U/L/T, Rectangulaire, Circulaire, Tubes), **Matériaux** (Béton Armé EC2, Acier Structural EC3), **Conditions d'Appuis** (Encastrement, Articulation, Appui Simple, Appui élastique), **Bibliothèques & TSALib** (Gestionnaire d'extensions TSALib, Catalogue de sections). |
-| **4. Calcul** | **Actions & Charges** (Charges nodales, Charges réparties sur barres, Moments, Cas de charges & Combinaisons Eurocodes), **Solveur Multi-Moteurs** (Calcul Statique, Sélection du moteur OpenSees / Custom2D MDD, Portée de calcul, Nettoyage topologique préalable). |
-| **5. Résultats** | **Panneau** (Ouvrir volet Résultats 3D), **Déformée 3D** (Activer/Masquer déformée, amplification), **Diagrammes 3D** ($M_z, M_y, M_x, V_z, V_y, N$, Flèches $U$), **Réactions** (Afficher réactions 3D), **Cadrage** (Cadrer Déformée, Résultats, Modèle), **Note de Calcul** (Inspecteur et export NDC PDF/HTML). |
-| **6. Édition** | **Sélection** (Mode sélection, Tout sélectionner, Inverser sélection, Sélection par type/niveau), **Outils 3D** (Déplacer, Copier, Rotation, Symétrie, Échelle, Réseaux, Décaler, Diviser, Intersecter, Prolonger, Ajuster, Fusionner), **Topologie** (Nettoyer le modèle, Fusionner nœuds), **Presse-papier** (Copier, Coller avec préservation BIM). |
-| **7. Affichage** | **Projections** (Vue 3D, Dessus, Dessous, Face, Arrière, Gauche, Droite, Isométrique, Accueil), **Navigation** (Zoom étendu, Zoom sélection, Zoom fenêtre, Historique de caméra), **Plans de Travail** (WorkPlanes multiples, Vue normale au plan, Mode 2D orthographique), **Isolation 3D** (Isoler sélection, Isoler type, Isoler plan, Masquer, Inverser, Historique d'isolation), **Aides Visuelles** (Grille, Niveaux, Règles, Nœuds, Magnétisme OSNAP), **Fenêtres & Docks**. |
-| **8. Outils** | **Inspection** (Mesurer distance 3D, Vérification géométrique), **Co-Ingénierie IA** (Panneau Assistant IA, Diagnostic de structure, Configuration modèle local), **Environnement** (Basculer thème Sombre / Clair), **Documentation** (Aide intégrée, Guide des raccourcis, À propos de TSALab). |
-
-### Système de Docks Centralisés (`WindowManager`)
-1. **Arbre du Modèle (`ModelTreeDock`)** : Hiérarchie complète des entités physiques BIM et analytiques avec synchronisation bidirectionnelle.
-2. **Inspecteur des Propriétés (`PropertiesDock`)** : Édition contextuelle et multi-édition groupée des sections, matériaux, excentrements et conditions d'extrémités.
-3. **Contrôle des Résultats 3D (`ResultsDockWidget`)** : Pilotage fin des composantes d'efforts affichées, du mode de déformée et des échelles visuelles.
-4. **Calques & Visibilité (`VisibilityDock`)** : Masquage et filtrage par famille, étages, repères et cas de charges.
-5. **Plans de Travail & Caméra (`ProjectionViewDock`)** : Définition, alignement et gestion des plans de coupe et de travail.
-6. **Assistant IA Co-Engineering (`AICoEngineeringDock`)** : Interface interactive d'échange avec le modèle LLM local, diagnostic et recommandations.
-7. **Console de Diagnostics (`LogConsoleDock`)** : Journalisation d'exécution en temps réel, sortie brute des solveurs et ligne de commande.
+Panneaux : explorateur du projet, propriétés, résultats structuraux 3D, console (commandes du registre central),
+données d'analyse (K, F, U), assistant IA. Un seul projet par fenêtre (voir `docs/LABORATORY_ROADMAP.md`).
 
 ---
 
 ## 🧪 Tests Automatisés
 
-TSALab intègre une suite rigoureuse de **212 bancs d'essais unitaires automatisés** (100% de réussite) validant l'ensemble de la chaîne logicielle, mécanique, numérique et BIM :
+| Exécutable | Contenu | État au 12/10/2026 |
+| :--- | :--- | :--- |
+| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints, L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences | 7 / 7 |
+| `tsalab_science_tests` | S1–S6 : algèbre linéaire, solveurs plans, MetDeDeplacement, benchmarks plans, OpenSees ≈ MetDeDeplacement | 6 / 6 |
+| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation… | 388 tests dans TSA |
 
 ```powershell
-# 1. Compilation de la suite de tests (Presets Ninja)
-cmake --build --preset ninja-debug --target TSALab_Tests
-
-# 2. Exécution complète de tous les bancs d'essais
+cmake --build --preset ninja-debug
 .\build-ninja-debug\TSALab_TestSuite.exe
-
-# Ou exécution via CTest
 ctest --test-dir build-ninja-debug --output-on-failure
 ```
-
-Pour exécuter une suite de tests ciblée :
-```powershell
-.\build-ninja-debug\TSALab_TestSuite.exe --suite=bim
-```
-
-### Couverture des 26 Suites de Tests :
-* **Suites 1–4 :** Coordonnées, niveaux d'étages, modèle structural source de vérité, persistance binaire `.tsalab` (chunks FourCC), commandes réversibles et moteur Undo/Redo par snapshots.
-* **Suites 5–8 :** Grilles 3D paramétriques, viewer 3D OCCT et matériaux, éléments câbles tendus non-linéaires, système d'extensions dynamiques TSALib.
-* **Suites 9–12 :** Plans de travail 3D interactifs (WorkPlanes), gestionnaire de fenêtres et layouts (`WindowManager`), gestionnaire centralisé de nœuds et sélection spatiale.
-* **Suites 13–14 :** Système complet de charges structurales, combinaisons Eurocodes, solveur OpenSees 3D, conditions d'appuis spatiales (6 DDL).
-* **Suites 15–16 :** Exigences normatives Eurocodes (EN 1990–1999) et moteur de génération de Note de Calcul (NDC).
-* **Suites 17–18 :** Extraction des matrices de rigidité et d'équilibre OpenSees ($K, U, F$), module de co-ingénierie par IA locale (matériel, modèles, RAG, sécurité).
-* **Suites 19–20 :** Aperçus de projets récents et provider de miniatures pour l'Explorateur Windows (`TSALabThumbnailProvider.dll`).
-* **Suites 21–23 :** Architecture d'analyse multi-moteurs, 20 outils de modélisation 3D (modification et dessin paramétrique), solveur 2D MetDeDeplacement.
-* **Suites 24–26 :** Moteur de nettoyage topologique (`ModelCleanup`), couche openBIM (mapping physique/analytique 1:N, identifiants IfcGuid, round-trip IFC4X3_ADD2), accrochage 3D haute précision en espace écran (OSNAP).
 
 ---
 
@@ -379,19 +357,21 @@ Les interactions et raccourcis clavier respectent scrupuleusement les exigences 
 ## 📁 Organisation du Dépôt
 
 ```text
-TSA/                            # Dépôt TSA voisin : base technique commune (src/, tests/, cmake/, Extensions/, SDK)
+TSA/                            # Dépôt TSA voisin : sources des bibliothèques partagées (src/), cmake/, tests de la base
 TSALab/
-├── product/                    # Identité et points d'extension du produit TSALab
-│   ├── ProductIdentity.h       # Nom, version, .tsalab, signature TSLB, QSettings, icônes
-│   ├── ProductShellIds.h       # CLSID / ProgID de l'extension Explorateur (miniatures .tsalab)
-│   ├── ProductHooks.cpp        # Start Center laboratoire, rail des espaces, ouverture des exemples
-│   └── ProductTests.cpp        # Suite de tests « lab » (L1-L5)
+├── product/                    # Identité du produit TSALab (nom, version, .tsalab, signature TSLB, réglages, CLSID)
 ├── lab/
-│   ├── Research/               # Numerics (solveurs instrumentés, valeurs propres), Examples, Solver (SOLVER LAB)
-│   └── LabUI/                  # LabStartPanel, LabWorkspaceHost (rail), SolverLabPage
-├── resources/                  # lab.qrc, TSALab.rc, icônes TSALab
-├── CMakeLists.txt              # Trouve ../TSA et appelle tsa_add_product(NAME TSALab …)
-├── CMakePresets.json           # Presets Ninja / Visual Studio (SDK du dépôt TSA)
+│   ├── LabApp/                 # main.cpp, LabMainWindow (fenêtre et espaces du laboratoire)
+│   ├── LabUI/                  # LabStartPanel, SolverLabPage, ValidationPage, ExperimentsPage
+│   ├── Research/               # Examples (modèles et Blueprints d'exemple), Solver (SOLVER LAB),
+│   │                           # Validation (banc partagé), Experiments (journal d'expériences)
+│   └── Tests/LabTests.cpp      # Suite « lab » (TSALab_TestSuite)
+├── science/                    # Cœur scientifique C++ pur (numerics, solveurs plans, MetDeDeplacement, validation),
+│                               # utilisé aussi par TSA (moteur Custom2D) ; tests S1–S6, outil tsalab-bench
+├── plugins/sample/             # Plugin d'exemple (API docs/PLUGINS.md du dépôt TSA)
+├── docs/                       # Documentation du laboratoire (architecture, API des solveurs, validation, feuille de route, audit)
+├── resources/                  # Icônes et ressources Windows de TSALab
+├── CMakeLists.txt              # Trouve ../TSA, compile les bibliothèques partagées à l'identité de TSALab
 └── run.bat                     # Lanceur (PATH Qt / OCCT / 3rdparty du dépôt TSA)
 ```
 

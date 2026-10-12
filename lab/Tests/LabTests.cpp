@@ -17,10 +17,14 @@
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 #include "Research/Solver/SolverExperiment.h"
+#include "Research/Validation/ValidationRunner.h"
+#include "Research/Experiments/ExperimentJournal.h"
 #include "Blueprint/BlueprintScript.h"
 
 #include <QApplication>
 #include <QTemporaryDir>
+#include <QFile>
+#include <QDir>
 
 #include <cmath>
 #include <cstring>
@@ -43,7 +47,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 5;
+constexpr int kLabTests = 7;
 
 bool runSuite_Lab(int& passed)
 {
@@ -227,6 +231,145 @@ bool runSuite_Lab(int& passed)
         TEST_CHECK(!plugins.loadFile(QStringLiteral("C:/nulle/part/plugin.dll"), &error) && !error.isEmpty(),
                    "Test L8: DLL introuvable refusée avec un message");
         std::cout << "[PASS] Test L8: plugin d'exemple (commande composée, nœud pur)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L9 : laboratoire de validation (banc partagé avec TSA)
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        const QString dir = defaultBenchmarkDirectory();
+        const auto cases = loadCases(dir);
+        int valid = 0;
+        for (const auto& c : cases) valid += c.valid();
+        TEST_CHECK(QDir(dir).exists() && cases.size() == 27 && valid == 27, "Test L9: 27 cas du banc partagé chargés et valides (" << cases.size() << ", " << valid << ")");
+
+        // Cas invalide : erreurs listées, pas d'exécution ni de plantage
+        QTemporaryDir tmp;
+        {
+            QFile f(tmp.filePath("BAD.json"));
+            f.open(QIODevice::WriteOnly);
+            f.write(R"({"format":"tsa.benchmark/1","id":"BAD","title":"Cas invalide","checks":[{"quantity":"node:1:quoi","formula":"1/"}]})");
+        }
+        const auto bad = loadCases(tmp.filePath("BAD.json"));
+        TEST_CHECK(bad.size() == 1 && !bad[0].valid() && !bad[0].errors.isEmpty(), "Test L9: cas invalide signalé avec ses erreurs");
+
+        // Exécution réelle : barre en traction (RDM-01) et portique (RDM-06), OpenSees et Custom2D
+        std::vector<TSA::Validation::BenchmarkCase> run;
+        for (const auto& c : cases)
+            if (c.benchmark.id == "RDM-01" || c.benchmark.id == "RDM-06") run.push_back(c.benchmark);
+        int progressCalls = 0;
+        const auto report = runValidation(run, {}, [&](const ValidationProgress&) { ++progressCalls; });
+        int checks = 0;
+        for (const auto& c : report.cases) checks += static_cast<int>(c.checks.size());
+        std::cout << "  " << report.checksPassed() << " réussies, " << report.checksFailed() << " en échec, " << report.checksUnavailable()
+                  << " non disponibles ; moteurs : " << report.engineVersions << std::endl;
+        TEST_CHECK(run.size() == 2 && report.cases.size() == 4 && checks > 0 && report.checksPassed() == checks && report.checksFailed() == 0,
+                   "Test L9: RDM-01 et RDM-06 sur OpenSees et Custom2D — toutes les vérifications réussies (" << report.checksPassed() << " / " << checks << ")");
+        TEST_CHECK(report.tsaVersion.rfind("TSALab", 0) == 0 && report.engineVersions.find("OpenSees 3.8") != std::string::npos &&
+                       report.engineVersions.find("Custom2D") != std::string::npos && report.engineVersions.find("OpenSees 3.8.0 (version inconnue)") == std::string::npos && !report.timestamp.empty() && progressCalls == 3,
+                   "Test L9: en-tête du rapport — version de TSALab, versions réelles des moteurs, date, progression");
+
+        // Arrêt demandé avant le premier cas : rien n'est exécuté
+        const auto cancelled = runValidation(run, {}, {}, [] { return true; });
+        TEST_CHECK(cancelled.cases.empty(), "Test L9: arrêt demandé — aucun cas exécuté");
+
+        // Références externes : valeur fausse détectée ; référence nulle → écart relatif non défini, tolérance absolue
+        {
+            QFile f(tmp.filePath("ref.csv"));
+            f.open(QIODevice::WriteOnly);
+            f.write("case,quantity,value,unit,source,rel_tol,abs_tol\n"
+                    "RDM-01,node:2:ux,1.0,m,logiciel fictif (essai d'erreur),0.01,0\n"
+                    "RDM-01,node:2:uz,0,m,symétrie (référence nulle),0,1e-9\n");
+        }
+        TSA::Validation::RunOptions options;
+        std::vector<std::string> errors;
+        options.external = TSA::Validation::loadExternalReferences(tmp.filePath("ref.csv"), &errors);
+        options.engines = { "opensees" };
+        const auto ext = runValidation({ run[0].id == "RDM-01" ? run[0] : run[1] }, options);
+        const TSA::Validation::CheckOutcome* wrong = nullptr;
+        const TSA::Validation::CheckOutcome* zero = nullptr;
+        for (const auto& c : ext.cases)
+            for (const auto& k : c.checks)
+            {
+                if (k.quantity == "node:2:ux" && k.source.find("fictif") != std::string::npos) wrong = &k;
+                if (k.quantity == "node:2:uz") zero = &k;
+            }
+        TEST_CHECK(errors.empty() && options.external.size() == 2 && wrong && !wrong->passed && checkStatusText(*wrong) == "ÉCHEC",
+                   "Test L9: référence externe erronée détectée (ÉCHEC), provenance conservée");
+        TEST_CHECK(zero && std::isnan(zero->relError) && relativeErrorText(*zero) == "réf. ≈ 0" && zero->passed,
+                   "Test L9: référence nulle — écart relatif non défini (« réf. ≈ 0 »), jugée sur la tolérance absolue");
+        std::cout << "[PASS] Test L9: laboratoire de validation (cas, exécution réelle, écarts, références externes)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L10 : journal d'expériences (traçabilité et reproduction)
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        QTemporaryDir tmp;
+        ExperimentJournal journal(tmp.filePath("Essai.experiments"));
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        TSA::Project::ProjectSession session;
+        TEST_CHECK(Examples::build("frame-3d", session.model()), "Test L10: portique spatial construit");
+        int completed = 0;
+        std::string completedEngine;
+        QObject::connect(&session.analysis(), &TSA::Analysis::AnalysisController::runCompleted,
+                         [&](const TSA::Analysis::AnalysisContext& c, bool ok, const QString&) { ++completed, completedEngine = ok ? c.engineId : std::string(); });
+        const auto r = TSA::Automation::executeCommandLine(reg, session, "analysis.run engine=opensees");
+        const auto results = session.analysis().results();
+        TEST_CHECK(r.ok && results && results->isValid(), "Test L10: calcul OpenSees (" << r.message << ")");
+        TEST_CHECK(completed == 1 && completedEngine == "opensees", "Test L10: fin de calcul signalée aussi pour un calcul en console (runCompleted, contexte calculé)");
+        const auto context = session.analysis().context();
+        TEST_CHECK(context.engineId == "opensees", "Test L10: contexte du calcul relu sur le contrôleur (" << context.engineId << ")");
+        QString err;
+        const auto rec = journal.recordAnalysis(session.model(), &session.grids(), context, true, QString::fromStdString(r.message), results.get(),
+                                                session.analysis().registry(), tmp.filePath("Essai.tsalab"), nullptr, &err);
+        TEST_CHECK(err.isEmpty() && rec.status == "réussi" && rec.labVersion.startsWith("TSALab") && rec.engineId == "opensees" && rec.engineVersion == "3.8.0" &&
+                       rec.modelHash.size() == 64 && QFile::exists(QDir(rec.folder).filePath(rec.modelSnapshot)) && rec.units.value("force").toString() == "kN" &&
+                       rec.results.contains("displacement.max_translation") && rec.results.contains("reaction.sum_fz") && rec.provenance.contains("OpenSees 3.8.0") &&
+                       !rec.analysisContext.isEmpty(),
+                   "Test L10: enregistrement — version, moteur et version lue, modèle figé + SHA-256, contexte, unités, résultats, provenance (" << err.toStdString() << ")");
+        const auto list = journal.records();
+        TEST_CHECK(list.size() == 1 && list[0].id == rec.id && list[0].results == rec.results && list[0].analysisContext == rec.analysisContext,
+                   "Test L10: expérience relue depuis le disque à l'identique");
+        const auto rep = ExperimentJournal::reproduce(list[0]);
+        for (const auto& c : rep.comparisons)
+            if (!c.equal) std::cout << "  écart " << c.quantity.toStdString() << " : " << c.original << " / " << c.reproduced << std::endl;
+        TEST_CHECK(rep.ran && rep.identical() && rep.comparisons.size() >= 6, "Test L10: rejeu — mêmes résultats (" << rep.comparisons.size() << " grandeurs ; " << rep.message.toStdString() << ")");
+
+        // Copie figée modifiée : rejeu refusé (empreinte)
+        {
+            QFile f(QDir(rec.folder).filePath(rec.modelSnapshot));
+            f.open(QIODevice::Append);
+            f.write("x");
+        }
+        const auto tampered = ExperimentJournal::reproduce(list[0]);
+        TEST_CHECK(!tampered.ran && tampered.message.contains("SHA-256"), "Test L10: copie figée modifiée — rejeu refusé (" << tampered.message.toStdString() << ")");
+
+        // Calcul non abouti : statut « échec », erreur conservée, aucun résultat
+        const auto failed = journal.recordAnalysis(session.model(), &session.grids(), context, false, "moteur indisponible", nullptr, session.analysis().registry(), QString());
+        TEST_CHECK(failed.status == "échec" && failed.errors.contains("moteur indisponible") && failed.results.isEmpty(), "Test L10: calcul non abouti enregistré avec son erreur");
+
+        // Exécution du banc : bilan et cas
+        std::vector<TSA::Validation::BenchmarkCase> one;
+        for (const auto& c : loadCases(defaultBenchmarkDirectory()))
+            if (c.benchmark.id == "RDM-01") one.push_back(c.benchmark);
+        const auto vrec = journal.recordValidation(runValidation(one, {}));
+        TEST_CHECK(vrec.kind == "validation" && vrec.status == "réussi" && vrec.results.value("checks.passed").toInt() > 0 && vrec.provenance.contains("banc de validation"),
+                   "Test L10: exécution du banc enregistrée (bilan, moteurs, cas)");
+        TEST_CHECK(!ExperimentJournal::reproduce(vrec).ran, "Test L10: une exécution du banc ne se rejoue pas comme un calcul (message explicite)");
+
+        // Enregistrement illisible : ignoré, les autres restent lisibles
+        QDir(journal.directory()).mkpath("corrompu");
+        {
+            QFile f(QDir(journal.directory()).filePath("corrompu/record.json"));
+            f.open(QIODevice::WriteOnly);
+            f.write("{pas du json");
+        }
+        TEST_CHECK(journal.records().size() == 3, "Test L10: enregistrement illisible ignoré (" << journal.records().size() << " lus)");
+        TEST_CHECK(ExperimentJournal::directoryForProject("C:/Etudes/Pont.tsalab").endsWith("Pont.experiments"), "Test L10: journal à côté du projet");
+        std::cout << "[PASS] Test L10: journal d'expériences (enregistrement, relecture, rejeu, intégrité)" << std::endl;
         ++passed;
     }
     return true;
