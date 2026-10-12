@@ -49,6 +49,7 @@ class AnalysisEngineOptionsRegistry;
 class AnalysisManagerPanel;
 class Diagram2DWidget;
 class ResultsDockWidget;
+class DisplayMenus;
 class BlueprintEditor;
 class LogConsoleDock;
 class ModelTreeWidget;
@@ -117,6 +118,7 @@ private:
     TSA::UI::Diagram2DWidget* m_diagram = nullptr;
     SolverLabPage* m_solverLab = nullptr;
     TSA::UI::ResultsDockWidget* m_resultsDock = nullptr;
+    TSA::UI::DisplayMenus* m_displayMenus = nullptr;   ///< échelles, profils, diagnostic (partagés avec TSA)
     TSA::UI::AnalysisDataDock* m_dataDock = nullptr;
     TSA::AI::AIOrchestrator* m_ai = nullptr;
     TSA::Automation::AutomationServer* m_automation = nullptr;   ///< pont MCP (Claude Code), TSA/docs/MCP.md

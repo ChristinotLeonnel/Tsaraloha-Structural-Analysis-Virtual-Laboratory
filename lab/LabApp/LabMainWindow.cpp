@@ -25,6 +25,8 @@
 #include "UI/Blueprint/BlueprintEditor.h"
 #include "UI/Common/SelectionSynchronizer.h"
 #include "UI/Diagrams/Diagram2DWidget.h"
+#include "UI/Display/DisplayMenus.h"
+#include "Viewer/DisplayProfile.h"
 #include "UI/Dock/AnalysisDataDock.h"
 #include "UI/Dock/LogConsoleDock.h"
 #include "UI/Dock/ResultsDockWidget.h"
@@ -48,6 +50,7 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -416,6 +419,19 @@ void LabMainWindow::createMenus()
     grid->setChecked(true);
     connect(grid, &QAction::toggled, this, [this](bool on) { m_view->setGridVisible(on); });
     view->addSeparator();
+    // Échelles des annotations et des charges, profils d'affichage, diagnostic : composant partagé avec TSA
+    // (TSA/src/UI/Display/DisplayMenus) ; représentation seulement, le modèle et les résultats ne changent pas.
+    m_displayMenus = new TSA::UI::DisplayMenus(this, { [this] { return m_view; },
+                                                       [this]() -> const TSA::Model::Model* { return &m_session->model(); },
+                                                       [this] { return m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString(); } });
+    m_displayMenus->addTo(view);
+    connect(m_displayMenus, &TSA::UI::DisplayMenus::profileApplied, this, [this, grid] {
+        const QSignalBlocker block(grid);
+        grid->setChecked(m_view->isGridVisible());
+        if (m_resultsDock && m_view->resultsVisual()) m_resultsDock->syncFromVisualManager(m_view->resultsVisual());
+    });
+    connect(m_displayMenus, &TSA::UI::DisplayMenus::message, this, [this](const QString& text, const QString& type) { log(text, type); });
+    view->addSeparator();
     QMenu* panels = view->addMenu(tr("&Panneaux"));
     for (QDockWidget* d : { m_treeDock, m_propertiesDock, static_cast<QDockWidget*>(m_console),
                             static_cast<QDockWidget*>(m_resultsDock), static_cast<QDockWidget*>(m_dataDock),
@@ -678,6 +694,10 @@ void LabMainWindow::afterProjectLoaded()
     m_analysisPanel->refresh();
     m_view->rebuildGrid();
     m_view->fitModel();
+    // Profil d'affichage associé à ce fichier (réglages de l'application, partagé avec TSA ; le fichier n'en contient pas)
+    if (m_displayMenus && m_session->project().hasFilePath())
+        if (const QString profile = TSA::Viewer::DisplayProfileStore().documentProfile(m_session->project().currentFilePath()); !profile.isEmpty())
+            m_displayMenus->applyProfile(profile);
     m_tree->setProjectName(m_session->project().hasFilePath() ? m_session->project().currentFileName()
                                                                : tr("Nouveau modèle") + TSA::Product::projectExtension());
     m_tree->refreshAll();
