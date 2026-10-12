@@ -1,5 +1,7 @@
 #include "ValidationPage.h"
 
+#include "Research/Validation/MeshConvergence.h"
+
 #include <QComboBox>
 #include <QDir>
 #include <QFileDialog>
@@ -11,6 +13,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSaveFile>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTextBrowser>
@@ -18,6 +21,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include <cmath>
 #include <map>
 
 namespace TSALab::UI
@@ -26,7 +30,10 @@ namespace TSALab::UI
 namespace
 {
 constexpr int kIdRole = Qt::UserRole + 1;
-QString num(double v) { return QLocale(QLocale::French).toString(v, 'g', 6); }
+constexpr int kCaseRole = Qt::UserRole + 2;    // indice du cas dans le rapport (colonne 0 des résultats)
+constexpr int kCheckRole = Qt::UserRole + 3;   // indice de la vérification dans le cas
+QString num(double v) { return std::isfinite(v) ? QLocale(QLocale::French).toString(v, 'g', 6) : QStringLiteral("—"); }
+QString pct(double v) { return std::isfinite(v) ? QLocale(QLocale::French).toString(v * 100.0, 'g', 3) + QStringLiteral(" %") : QStringLiteral("—"); }
 } // namespace
 
 ValidationPage::ValidationPage(QWidget* parent)
@@ -72,9 +79,12 @@ void ValidationPage::buildUi()
     m_run = new QPushButton(tr("▶ Exécuter les cas cochés"), this);
     m_stop = new QPushButton(tr("Arrêter"), this);
     m_export = new QPushButton(tr("Exporter le rapport…"), this);
+    m_convergence = new QPushButton(tr("Convergence (CSV)…"), this);
+    m_convergence->setToolTip(tr("Série de la vérification sélectionnée : une valeur par taille de maille"));
     m_stop->setEnabled(false);
     m_export->setEnabled(false);
-    for (QWidget* w : std::initializer_list<QWidget*> { folder, all, none, m_engine, refs, m_run, m_stop, m_export }) bar->addWidget(w);
+    m_convergence->setEnabled(false);
+    for (QWidget* w : std::initializer_list<QWidget*> { folder, all, none, m_engine, refs, m_run, m_stop, m_export, m_convergence }) bar->addWidget(w);
     bar->addStretch();
     root->addLayout(bar);
     m_referencesLabel = new QLabel(this);
@@ -120,7 +130,9 @@ void ValidationPage::buildUi()
         m_summary->setText(tr("Arrêt demandé : le cas en cours se termine…"));
     });
     connect(m_export, &QPushButton::clicked, this, &ValidationPage::exportReport);
+    connect(m_convergence, &QPushButton::clicked, this, &ValidationPage::exportConvergence);
     connect(m_tree, &QTreeWidget::currentItemChanged, this, &ValidationPage::showCaseDetails);
+    connect(m_table, &QTableWidget::currentCellChanged, this, [this](int row) { showCheckDetails(row); });
 }
 
 void ValidationPage::loadCases(const QString& directory)
@@ -299,8 +311,10 @@ void ValidationPage::showReport()
 {
     m_table->setRowCount(0);
     int skipped = 0, notRun = 0;
-    for (const auto& c : m_report.cases)
+    m_convergence->setEnabled(false);
+    for (std::size_t ci = 0; ci < m_report.cases.size(); ++ci)
     {
+        const auto& c = m_report.cases[ci];
         if (c.skipped) ++skipped;
         if (!c.ran)
         {
@@ -314,17 +328,21 @@ void ValidationPage::showReport()
             m_table->setItem(r, 10, new QTableWidgetItem(c.skipped ? tr("IGNORÉ") : tr("ÉCHEC")));
             continue;
         }
-        for (const auto& k : c.checks)
+        for (std::size_t ki = 0; ki < c.checks.size(); ++ki)
         {
+            const auto& k = c.checks[ki];
             const int r = m_table->rowCount();
             m_table->insertRow(r);
             const QString tol = tr("%1 rel. + %2 abs.").arg(num(k.tolerance.rel), num(k.tolerance.abs));
-            const QString origin = QString::fromStdString(k.source) + (k.interpolated ? tr(", interpolée") : QString());
+            const QString origin = QString::fromStdString(k.source) + (k.interpolated ? tr(", interpolée") : QString()) +
+                                   (k.convergence.size() > 1 ? tr(", convergence sur %1 maillages").arg(k.convergence.size()) : QString());
             const QStringList cells { QString::fromStdString(c.caseId), QString::fromStdString(c.engine), QString::fromStdString(k.quantity),
                                       QString::fromStdString(k.label), num(k.reference) + QStringLiteral(" ") + QString::fromStdString(k.unit),
                                       k.available ? num(k.value) : QStringLiteral("—"), k.available ? num(k.absError) : QStringLiteral("—"),
                                       Research::relativeErrorText(k), tol, origin, Research::checkStatusText(k) };
             for (int col = 0; col < cells.size(); ++col) m_table->setItem(r, col, new QTableWidgetItem(cells[col]));
+            m_table->item(r, 0)->setData(kCaseRole, static_cast<int>(ci));
+            m_table->item(r, 0)->setData(kCheckRole, static_cast<int>(ki));
             const QColor color = !k.available ? QColor(0xD0, 0xA0, 0x30) : k.passed ? QColor(0x3F, 0xB9, 0x50) : QColor(0xE0, 0x50, 0x50);
             m_table->item(r, 10)->setForeground(color);
             if (!k.note.empty()) m_table->item(r, 10)->setToolTip(QString::fromStdString(k.note));
@@ -338,6 +356,78 @@ void ValidationPage::showReport()
                            .arg(notRun - skipped)
                            .arg(QString::fromStdString(m_report.tsaVersion), QString::fromStdString(m_report.engineVersions)));
     m_export->setEnabled(!m_report.cases.empty());
+}
+
+const TSA::Validation::CheckOutcome* ValidationPage::checkAt(int row) const
+{
+    const QTableWidgetItem* it = row >= 0 && row < m_table->rowCount() ? m_table->item(row, 0) : nullptr;
+    if (!it || !it->data(kCaseRole).isValid()) return nullptr;
+    const auto ci = static_cast<std::size_t>(it->data(kCaseRole).toInt());
+    const auto ki = static_cast<std::size_t>(it->data(kCheckRole).toInt());
+    if (ci >= m_report.cases.size() || ki >= m_report.cases[ci].checks.size()) return nullptr;
+    return &m_report.cases[ci].checks[ki];
+}
+
+QString ValidationPage::detailsHtml() const { return m_details->toHtml(); }
+
+bool ValidationPage::showCheckDetails(int row)
+{
+    const auto* k = checkAt(row);
+    m_convergence->setEnabled(k && k->convergence.size() > 1);
+    if (!k) return false;
+    const QString unit = QString::fromStdString(k->unit).toHtmlEscaped();
+    QString html = tr("<h3>%1 — %2</h3><p>%3 · moteur %4</p>")
+                       .arg(QString::fromStdString(k->caseId).toHtmlEscaped(), QString::fromStdString(k->quantity).toHtmlEscaped(),
+                            QString::fromStdString(k->label).toHtmlEscaped(), QString::fromStdString(k->engine).toHtmlEscaped());
+    html += tr("<p>Référence (%1) : <b>%2 %3</b>%4<br>Valeur TSA : <b>%5</b> — écart relatif %6 — %7</p>")
+                .arg(QString::fromStdString(k->source).toHtmlEscaped(), num(k->reference), unit,
+                     k->formula.empty() ? QString() : QStringLiteral(" = ") + QString::fromStdString(k->formula).toHtmlEscaped(),
+                     k->available ? num(k->value) + QStringLiteral(" ") + unit : tr("non disponible"), Research::relativeErrorText(*k).toHtmlEscaped(),
+                     Research::checkStatusText(*k));
+    if (k->convergence.size() > 1)
+    {
+        const auto st = Research::analyseMeshConvergence(*k);
+        html += tr("<p><b>Convergence en maillage</b> — la vérification porte sur le maillage le plus fin.</p>"
+                   "<table border='1' cellspacing='0' cellpadding='3'><tr><th>h (m)</th><th>Maillage produit</th><th>Valeur</th>"
+                   "<th>Écart à la réf.</th><th>Variation</th></tr>");
+        for (const auto& r : st.rows)
+            html += QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td></tr>")
+                        .arg(num(r.meshSize), r.mesh.toHtmlEscaped(), r.available ? num(r.value) : tr("non calculé"), pct(r.relErrorToReference), pct(r.relChange));
+        html += QStringLiteral("</table>");
+        if (!st.applicable)
+            html += tr("<p>Étude non applicable : %1.</p>").arg(st.reason.toHtmlEscaped());
+        else
+        {
+            html += tr("<p>Écart à la référence %1 d'un maillage au suivant.<br>Ordre de convergence observé : <b>%2</b> (%3).</p>")
+                        .arg(st.errorDecreasing ? tr("décroissant") : tr("<b>non monotone</b>"),
+                             std::isfinite(st.observedOrder) ? num(st.observedOrder) : tr("non calculé"), st.orderNote.toHtmlEscaped());
+            if (std::isfinite(st.extrapolated))
+                html += tr("<p>Extrapolation de Richardson (post-traitement de TSALab, pas une valeur du moteur) : %1 %2, écart à la référence %3. "
+                           "Un écart extrapolé qui ne tend pas vers zéro relève de la modélisation (théorie du moteur ≠ théorie de la référence), "
+                           "pas de la discrétisation.</p>")
+                            .arg(num(st.extrapolated), unit, pct(st.extrapolatedRelError));
+        }
+    }
+    else if (!k->note.empty())
+        html += tr("<p><i>%1</i></p>").arg(QString::fromStdString(k->note).toHtmlEscaped());
+    m_details->setHtml(html);
+    return true;
+}
+
+void ValidationPage::exportConvergence()
+{
+    const auto* k = checkAt(m_table->currentRow());
+    if (!k || k->convergence.size() < 2) return;
+    const QString name = QStringLiteral("%1_%2_convergence.csv").arg(QString::fromStdString(k->caseId), QString::fromStdString(k->quantity).replace(':', '_'));
+    const QString path = QFileDialog::getSaveFileName(this, tr("Exporter la convergence"), QDir::home().filePath(name), tr("CSV (*.csv)"));
+    if (path.isEmpty()) return;
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly) || f.write(Research::meshConvergenceCsv(*k, Research::analyseMeshConvergence(*k)).toUtf8()) < 0 || !f.commit())
+    {
+        QMessageBox::warning(this, tr("Convergence"), tr("Écriture impossible : %1").arg(f.errorString()));
+        return;
+    }
+    emit message(tr("Convergence exportée : %1").arg(QDir::toNativeSeparators(path)), QStringLiteral("INFO"));
 }
 
 void ValidationPage::exportReport()

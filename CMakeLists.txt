@@ -67,6 +67,8 @@ add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Solver/SolverExperiment.cpp
     ${LAB_DIR}/Research/Validation/ValidationRunner.h
     ${LAB_DIR}/Research/Validation/ValidationRunner.cpp
+    ${LAB_DIR}/Research/Validation/MeshConvergence.h
+    ${LAB_DIR}/Research/Validation/MeshConvergence.cpp
     ${LAB_DIR}/Research/Experiments/ExperimentJournal.h
     ${LAB_DIR}/Research/Experiments/ExperimentJournal.cpp
     ${LAB_DIR}/Research/Reference/AnalyticalReference.h

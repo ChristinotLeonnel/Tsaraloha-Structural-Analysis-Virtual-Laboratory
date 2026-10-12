@@ -21,6 +21,7 @@
 #include "Research/Validation/ValidationRunner.h"
 #include "Research/Experiments/ExperimentJournal.h"
 #include "Research/Reference/AnalyticalReference.h"
+#include "Research/Validation/MeshConvergence.h"
 #include "Analysis/ResultsExport.h"
 #include "Blueprint/BlueprintScript.h"
 
@@ -52,7 +53,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 9;
+constexpr int kLabTests = 10;
 
 bool runSuite_Lab(int& passed)
 {
@@ -535,6 +536,67 @@ bool runSuite_Lab(int& passed)
         TEST_CHECK(!o->advanced().hasGlobalStiffness && a1.empty() && !e1.empty(), "Test L12: K globale absente — refus explicite avec la raison du moteur");
         TEST_CHECK(o->advanced().loadVector.empty() && (a2.empty() ? !e2.empty() : a2.find(",,") != std::string::npos), "Test L12: F non exporté par OpenSees — jamais reconstitué");
         std::cout << "[PASS] Test L12: laboratoire matriciel (K, F, U, DDL, transformations ; données absentes refusées)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L13 : convergence en maillage — série structurée du banc, ordre observé, extrapolation, chaîne Gmsh → OpenSees
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        using TSA::Validation::CheckOutcome;
+        using TSA::Validation::ConvergencePoint;
+        // Série synthétique f(h) = 1 + 0,1·h² : ordre 2, Richardson exact
+        CheckOutcome k;
+        k.caseId = "SYN", k.quantity = "surface:uz:absmax", k.reference = 1.0;
+        for (double h : { 1.0, 0.5, 0.25 }) k.convergence.push_back(ConvergencePoint { h, "maillage", true, 1.0 + 0.1 * h * h });
+        auto st = analyseMeshConvergence(k);
+        TEST_CHECK(st.applicable && st.errorDecreasing && std::abs(st.refinementRatio - 2.0) < 1e-12 && std::abs(st.observedOrder - 2.0) < 1e-9 &&
+                       std::abs(st.extrapolated - 1.0) < 1e-12 && st.extrapolatedRelError < 1e-12,
+                   "Test L13: ordre observé 2 et extrapolation de Richardson exacts sur f = 1 + 0,1·h² (p = " << st.observedOrder << ")");
+        const QString csv = meshConvergenceCsv(k, st);
+        TEST_CHECK(csv.contains("mesh_size,mesh,value,rel_error_to_reference,rel_change") && csv.count('\n') == 6 && csv.contains("non calculée par le moteur"),
+                   "Test L13: CSV de convergence (en-tête, 3 maillages, extrapolation signalée comme non issue du moteur)");
+        // Rapport non constant, oscillation, maillage manquant : ordre non calculé, raison donnée
+        CheckOutcome nc = k;
+        nc.convergence[2].meshSize = 0.2;
+        st = analyseMeshConvergence(nc);
+        TEST_CHECK(st.applicable && std::isnan(st.observedOrder) && std::isnan(st.extrapolated) && st.orderNote.contains("non constant"), "Test L13: rapport non constant — ordre non calculé (" << st.orderNote.toStdString() << ")");
+        CheckOutcome osc = k;
+        osc.convergence[2].value = 1.04;
+        st = analyseMeshConvergence(osc);
+        TEST_CHECK(std::isnan(st.observedOrder) && st.orderNote.contains("oscillante") && !st.errorDecreasing, "Test L13: convergence oscillante — ordre non défini, écart non monotone signalé");
+        CheckOutcome miss = k;
+        miss.convergence[1].available = false;
+        st = analyseMeshConvergence(miss);
+        TEST_CHECK(st.applicable && std::isnan(st.observedOrder) && std::isnan(st.rows[1].relErrorToReference) && std::isnan(st.rows[2].relChange),
+                   "Test L13: maillage non calculé — aucune valeur inventée, ordre non calculé");
+        CheckOutcome single;
+        single.reference = 1.0;
+        TEST_CHECK(!analyseMeshConvergence(single).applicable && meshConvergenceCsv(single, analyseMeshConvergence(single)).isEmpty(), "Test L13: calcul unique — pas d'étude");
+
+        // Chaîne réelle : FEA-01 (plaque, Gmsh → coques OpenSees) sur 3 maillages
+        std::vector<TSA::Validation::BenchmarkCase> run;
+        for (const auto& c : loadCases(defaultBenchmarkDirectory()))
+            if (c.benchmark.id == "FEA-01") run.push_back(c.benchmark);
+        TEST_CHECK(run.size() == 1, "Test L13: cas FEA-01 présent");
+        const auto report = runValidation(run, {});
+        const CheckOutcome* uz = nullptr;
+        for (const auto& c : report.cases)
+            for (const auto& ck : c.checks)
+                if (ck.quantity == "surface:uz:absmax") uz = &ck;
+        TEST_CHECK(uz && uz->convergence.size() == 3, "Test L13: FEA-01 — série de 3 maillages enregistrée par le banc");
+        if (uz)
+        {
+            const auto fea = analyseMeshConvergence(*uz);
+            for (const auto& r : fea.rows)
+                std::cout << "  FEA-01 h=" << r.meshSize << " (" << r.mesh.toStdString() << ") uz=" << r.value << " écart réf. " << r.relErrorToReference * 100 << " %" << std::endl;
+            std::cout << "  ordre observé : " << fea.observedOrder << " (" << fea.orderNote.toStdString() << ") ; extrapolé : " << fea.extrapolated << " (écart "
+                      << fea.extrapolatedRelError * 100 << " %)" << std::endl;
+            bool meshes = true;
+            for (const auto& r : fea.rows) meshes = meshes && r.available && !r.mesh.isEmpty();
+            TEST_CHECK(fea.applicable && meshes && uz->passed && fea.rows.back().value == uz->value, "Test L13: FEA-01 — 3 maillages générés et calculés, vérification sur le plus fin réussie");
+        }
+        std::cout << "[PASS] Test L13: convergence en maillage (série du banc, ordre observé, Richardson, chaîne Gmsh → OpenSees)" << std::endl;
         ++passed;
     }
     return true;

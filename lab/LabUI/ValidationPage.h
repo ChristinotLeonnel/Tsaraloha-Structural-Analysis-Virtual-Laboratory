@@ -46,6 +46,10 @@ public:
     bool isRunning() const { return m_thread != nullptr; }
     const TSA::Validation::BenchmarkReport& lastReport() const { return m_report; }
     int resultRowCount() const;
+    /// Détail d'une ligne de résultats dans le panneau (étude de convergence en maillage si le cas en a une) ;
+    /// faux si la ligne n'est pas une vérification.
+    bool showCheckDetails(int row);
+    QString detailsHtml() const;
 
 signals:
     void finished(const TSA::Validation::BenchmarkReport& report);
@@ -57,6 +61,8 @@ private:
     void showReport();
     void importReferences();
     void exportReport();
+    void exportConvergence();
+    const TSA::Validation::CheckOutcome* checkAt(int row) const;
     void setRunning(bool running);
 
     QString m_directory;
@@ -76,6 +82,7 @@ private:
     QPushButton* m_run = nullptr;
     QPushButton* m_stop = nullptr;
     QPushButton* m_export = nullptr;
+    QPushButton* m_convergence = nullptr;
 };
 
 } // namespace TSALab::UI
