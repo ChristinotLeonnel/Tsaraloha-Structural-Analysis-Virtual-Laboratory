@@ -21,6 +21,7 @@
 #include "Research/Validation/ValidationRunner.h"
 #include "Research/Experiments/ExperimentJournal.h"
 #include "Research/Reference/AnalyticalReference.h"
+#include "Analysis/ResultsExport.h"
 #include "Blueprint/BlueprintScript.h"
 
 #include <QApplication>
@@ -51,7 +52,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 8;
+constexpr int kLabTests = 9;
 
 bool runSuite_Lab(int& passed)
 {
@@ -460,6 +461,80 @@ bool runSuite_Lab(int& passed)
                        back.parameters == refEx.parameters,
                    "Test L11: expérience rouverte depuis le disque — référence, écarts et paramètres intacts");
         std::cout << "[PASS] Test L11: première expérience complète (modèle, calcul sur 2 moteurs, référence analytique, enregistrement, réouverture)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L12 : laboratoire matriciel — données réellement exportées par le moteur, export CSV, aucune valeur inventée
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSA::Analysis;
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        TSA::Project::ProjectSession s;
+        TEST_CHECK(Examples::build("simply-supported-point", s.model()) && s.analysis().restoreContextFromModel(), "Test L12: expérience de référence");
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, s, "analysis.run engine=custom2d axis=plan export_system=true").ok, "Test L12: calcul Custom2D, système exporté");
+        const auto r = s.analysis().results();
+        const auto& adv = r->advanced();
+        const std::size_t n = adv.dofMap.equations.size();
+        TEST_CHECK(n > 0 && adv.hasGlobalStiffness && adv.loadVector.size() == n && adv.displacementVector.size() == n,
+                   "Test L12: K, F, U et numérotation des DDL exportés par Custom2D (" << n << " équations)");
+        // K·U = F à partir des seules données exportées
+        std::vector<double> ku(n, 0.0);
+        for (std::size_t q = 0; q < adv.kGlobal.values.size(); ++q) ku[std::size_t(adv.kGlobal.rowIndex[q])] += adv.kGlobal.values[q] * adv.displacementVector[std::size_t(adv.kGlobal.colIndex[q])];
+        double res = 0, fmax = 0, fsum = 0;
+        for (std::size_t i = 0; i < n; ++i) res = std::max(res, std::abs(ku[i] - adv.loadVector[i])), fmax = std::max(fmax, std::abs(adv.loadVector[i])), fsum += adv.loadVector[i];
+        TEST_CHECK(res <= 1e-9 * fmax && std::abs(fsum + 50.0) < 1e-9, "Test L12: K·U = F vérifié sur les données exportées (résidu " << res << ", ΣF = " << fsum << " kN)");
+        std::string err;
+        const std::string fu = ResultsExport::render(*r, ResultsDataset::SystemVectors, ResultsExportFormat::Csv, &err);
+        TEST_CHECK(err.empty() && fu.find("equation,node,dof,F,U,U_source") != std::string::npos && fu.find("-50") != std::string::npos && fu.find(",moteur") != std::string::npos,
+                   "Test L12: export CSV des vecteurs F et U (provenance « moteur ») (" << err << ")");
+        // Custom2D n'exporte pas de matrices élémentaires : transformations refusées avec la raison, jamais inventées
+        std::string errT;
+        const std::string trC = ResultsExport::render(*r, ResultsDataset::Transformations, ResultsExportFormat::Csv, &errT);
+        TEST_CHECK(trC.empty() && errT.find("indisponibles") != std::string::npos, "Test L12: Custom2D — transformations non exportées, refus explicite (" << errT << ")");
+        const std::string kg = ResultsExport::render(*r, ResultsDataset::GlobalStiffness, ResultsExportFormat::Csv, &err);
+        TEST_CHECK(err.empty() && kg.find("row,col,row_dof,col_dof,value") != std::string::npos, "Test L12: export CSV de K globale");
+
+        // OpenSees en extraction avancée : matrices élémentaires (rotation comprise) et K globale exportées
+        {
+            auto ctx = s.analysis().context();
+            QJsonObject os = ctx.settingsFor("opensees");
+            os.insert("extractionLevel", static_cast<int>(ExtractionLevel::Advanced));
+            ctx.engineSettings["opensees"] = os;
+            s.analysis().setContext(ctx);
+        }
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, s, "analysis.run engine=opensees").ok, "Test L12: calcul OpenSees (extraction avancée)");
+        const auto adv2 = s.analysis().results();
+        std::string errA;
+        const std::string trO = ResultsExport::render(*adv2, ResultsDataset::Transformations, ResultsExportFormat::Csv, &errA);
+        int rows = 0;
+        for (char ch : trO) rows += ch == '\n';
+        TEST_CHECK(errA.empty() && rows == 3 && trO.find("x_X,x_Y,x_Z") != std::string::npos && trO.find("elasticBeamColumn") != std::string::npos,
+                   "Test L12: OpenSees — transformations local/global des 2 barres exportées (" << errA << ")");
+        const auto& em = adv2->advanced().elementMatrices;
+        TEST_CHECK(!em.empty() && em.begin()->second.available && em.begin()->second.kLocal.rows == 12 && adv2->advanced().hasGlobalStiffness,
+                   "Test L12: OpenSees — matrices locales 12×12 et K globale exportées");
+        const std::string fuO = ResultsExport::render(*adv2, ResultsDataset::SystemVectors, ResultsExportFormat::Csv, &errA);
+        TEST_CHECK(fuO.find("non exporté par ce moteur") != std::string::npos && fuO.find("déplacements nodaux") != std::string::npos,
+                   "Test L12: OpenSees — F non exporté (colonne vide, signalé), U déduit des déplacements et marqué comme tel");
+
+        // OpenSees en mode léger : aucune matrice exportée → refus explicite, aucune valeur inventée
+        {
+            auto ctx = s.analysis().context();
+            QJsonObject os = ctx.settingsFor("opensees");
+            os.insert("extractionLevel", static_cast<int>(ExtractionLevel::Light));
+            ctx.engineSettings["opensees"] = os;
+            s.analysis().setContext(ctx);
+        }
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, s, "analysis.run engine=opensees").ok, "Test L12: calcul OpenSees (mode léger)");
+        const auto o = s.analysis().results();
+        std::string e1, e2, e3;
+        const std::string a1 = ResultsExport::render(*o, ResultsDataset::GlobalStiffness, ResultsExportFormat::Csv, &e1);
+        const std::string a2 = ResultsExport::render(*o, ResultsDataset::SystemVectors, ResultsExportFormat::Csv, &e2);
+        const std::string a3 = ResultsExport::render(*o, ResultsDataset::Transformations, ResultsExportFormat::Csv, &e3);
+        std::cout << "  OpenSees léger — K : " << e1 << " | F, U : " << e2 << " | T : " << e3 << std::endl;
+        TEST_CHECK(!o->advanced().hasGlobalStiffness && a1.empty() && !e1.empty(), "Test L12: K globale absente — refus explicite avec la raison du moteur");
+        TEST_CHECK(o->advanced().loadVector.empty() && (a2.empty() ? !e2.empty() : a2.find(",,") != std::string::npos), "Test L12: F non exporté par OpenSees — jamais reconstitué");
+        std::cout << "[PASS] Test L12: laboratoire matriciel (K, F, U, DDL, transformations ; données absentes refusées)" << std::endl;
         ++passed;
     }
     return true;
