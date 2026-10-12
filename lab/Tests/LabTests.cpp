@@ -14,15 +14,19 @@
 #include "Model/Load/LoadManager.h"
 #include "Plugins/PluginManager.h"
 #include "Project/ProjectSession.h"
+#include "Project/ProjectManager.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 #include "Research/Solver/SolverExperiment.h"
 #include "Research/Validation/ValidationRunner.h"
 #include "Research/Experiments/ExperimentJournal.h"
+#include "Research/Reference/AnalyticalReference.h"
 #include "Blueprint/BlueprintScript.h"
 
 #include <QApplication>
 #include <QTemporaryDir>
+#include <variant>
+#include <QImage>
 #include <QFile>
 #include <QDir>
 
@@ -47,7 +51,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 7;
+constexpr int kLabTests = 8;
 
 bool runSuite_Lab(int& passed)
 {
@@ -177,7 +181,7 @@ bool runSuite_Lab(int& passed)
             }
             ++planar;
         }
-        TEST_CHECK(planar == 5, "Test L7: 5 exemples plans calculés");
+        TEST_CHECK(planar == 6, "Test L7: 6 exemples plans calculés");
         // Portique spatial : aucun plan, le moteur 2D refuse explicitement.
         TSA::Project::ProjectSession space;
         TEST_CHECK(Examples::build("frame-3d", space.model()), "Test L7: portique spatial construit");
@@ -370,6 +374,92 @@ bool runSuite_Lab(int& passed)
         TEST_CHECK(journal.records().size() == 3, "Test L10: enregistrement illisible ignoré (" << journal.records().size() << " lus)");
         TEST_CHECK(ExperimentJournal::directoryForProject("C:/Etudes/Pont.tsalab").endsWith("Pont.experiments"), "Test L10: journal à côté du projet");
         std::cout << "[PASS] Test L10: journal d'expériences (enregistrement, relecture, rejeu, intégrité)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L11 : première expérience complète — poutre bi-appuyée, force ponctuelle centrale, référence d'Euler-Bernoulli
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        QTemporaryDir tmp;
+
+        // 1-3. Modèle créé par les commandes du registre (chemin de l'utilisateur : console, Blueprint, MCP)
+        TSA::Project::ProjectSession user;
+        const char* script[] = { "model.create_node position=0,0,0", "model.create_node position=3,0,0", "model.create_node position=6,0,0",
+                                 "model.create_beam start=1 end=2 section=\"IPE 300\" material=S235", "model.create_beam start=2 end=3 section=\"IPE 300\" material=S235",
+                                 "model.set_support node=1 type=PINNED", "model.set_support node=3 type=ROLLER" };
+        for (const char* line : script)
+        {
+            const auto r = TSA::Automation::executeCommandLine(reg, user, line);
+            TEST_CHECK(r.ok, "Test L11: commande « " << line << " » (" << r.message << ")");
+        }
+        const auto lc = TSA::Automation::executeCommandLine(reg, user, "loads.create_case name=P category=live");
+        TEST_CHECK(lc.ok, "Test L11: cas de charge (" << lc.message << ")");
+        const int caseId = static_cast<int>(std::get<long long>(lc.outputs.at("id")));
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, user, ("loads.add_nodal node=2 case=" + std::to_string(caseId) + " fz=-50").c_str()).ok, "Test L11: force de 50 kN à mi-portée");
+
+        // 4-7. Calcul par chaque moteur disponible, comparaison à la référence analytique
+        for (const char* engine : { "custom2d", "opensees" })
+        {
+            auto ctx = user.analysis().context();
+            ctx.common.includeSelfWeight = false;   // hypothèse de la formule
+            ctx.loadCaseIds = { caseId };
+            user.analysis().setContext(ctx);
+            const std::string cmd = std::string("analysis.run engine=") + engine + (std::string(engine) == "custom2d" ? " axis=plan" : "");
+            const auto run = TSA::Automation::executeCommandLine(reg, user, cmd.c_str());
+            TEST_CHECK(run.ok, "Test L11: calcul " << engine << " (" << run.message << ")");
+            const auto results = user.analysis().results();
+            const auto ref = simplySupportedCentralLoad(user.model(), user.analysis().context(), results.get());
+            for (const auto& v : ref.violations) std::cout << "  hypothèse non remplie : " << v.toStdString() << std::endl;
+            for (const auto& c : ref.checks)
+                std::cout << "  " << engine << " — " << c.label.toStdString() << " : " << c.computed << " / " << c.reference << " " << c.unit.toStdString()
+                          << " (écart " << c.absError << ")" << (c.passed ? "" : "  ÉCHEC") << std::endl;
+            TEST_CHECK(ref.applicable && ref.checks.size() == 5 && ref.passed() && ref.warnings.isEmpty(),
+                       "Test L11: " << engine << " — réactions P/2, flèche P·L³/(48EI), M = P·L/4, V = P/2 dans la tolérance 1e-6");
+        }
+        // Valeur de contrôle indépendante : δ = 50·6³/(48·210e6·Iy) avec Iy de l'IPE 300
+        const double iy = TSA::Model::Section::ipe(300).iy();
+        const auto refNow = simplySupportedCentralLoad(user.model(), user.analysis().context(), user.analysis().results().get());
+        TEST_CHECK(std::abs(refNow.checks[2].reference - (-50.0 * 216.0 / (48.0 * 210e6 * iy))) < 1e-15 && std::abs(refNow.checks[3].reference - 75.0) < 1e-12,
+                   "Test L11: valeurs de référence (δ = " << refNow.checks[2].reference << " m, M = " << refNow.checks[3].reference << " kN·m)");
+
+        // Hypothèse non remplie : nommée, aucune comparaison
+        auto withWeight = user.analysis().context();
+        withWeight.common.includeSelfWeight = true;
+        const auto refused = simplySupportedCentralLoad(user.model(), withWeight, user.analysis().results().get());
+        TEST_CHECK(!refused.applicable && refused.checks.empty() && refused.violations.join(" ").contains("poids propre"),
+                   "Test L11: poids propre inclus — référence non appliquée, raison nommée");
+        TSA::Project::ProjectSession portal;
+        Examples::build("portal", portal.model());
+        const auto notThis = simplySupportedCentralLoad(portal.model(), portal.analysis().context(), nullptr);
+        TEST_CHECK(!notThis.applicable && notThis.violations.size() >= 1, "Test L11: portique — reconnu comme hors du domaine de la référence");
+
+        // 1 et 8. Exemple de référence : enregistrer, rouvrir (modèle, réglages), expérience journalisée puis relue
+        TSA::Project::ProjectSession ex;
+        TEST_CHECK(Examples::build("simply-supported-point", ex.model()), "Test L11: exemple de référence construit");
+        TEST_CHECK(ex.analysis().restoreContextFromModel() && !ex.analysis().context().common.includeSelfWeight, "Test L11: réglages de l'exemple (poids propre exclu) relus");
+        const QString file = tmp.filePath(QStringLiteral("Poutre%1").arg(TSA::Product::projectExtension()));
+        QString err;
+        TEST_CHECK(ex.project().saveProject(file, ex.model(), &ex.grids(), QImage(), &err), "Test L11: projet enregistré (" << err.toStdString() << ")");
+        TSA::Project::ProjectSession reopened;
+        TEST_CHECK(reopened.project().openProject(file, reopened.model(), &reopened.grids(), &err), "Test L11: projet rouvert (" << err.toStdString() << ")");
+        TEST_CHECK(reopened.model().nodes().size() == 3 && reopened.model().beams().size() == 2 && reopened.analysis().restoreContextFromModel() &&
+                       !reopened.analysis().context().common.includeSelfWeight,
+                   "Test L11: modèle et réglages de calcul identiques après réouverture");
+        const auto runEx = TSA::Automation::executeCommandLine(reg, reopened, "analysis.run engine=custom2d axis=plan");
+        TEST_CHECK(runEx.ok, "Test L11: exemple rouvert calculé (" << runEx.message << ")");
+        const auto refEx = simplySupportedCentralLoad(reopened.model(), reopened.analysis().context(), reopened.analysis().results().get());
+        ExperimentJournal journal(ExperimentJournal::directoryForProject(file));
+        const auto rec = journal.recordAnalysis(reopened.model(), &reopened.grids(), reopened.analysis().context(), true, QString(),
+                                                reopened.analysis().results().get(), reopened.analysis().registry(), file, nullptr, &err, refEx.toJson());
+        TEST_CHECK(refEx.passed() && rec.reference.value("applicable").toBool() && rec.warnings.isEmpty(), "Test L11: expérience journalisée avec sa référence, sans avertissement");
+        const auto again = ExperimentJournal(ExperimentJournal::directoryForProject(file)).records();
+        const auto back = again.empty() ? ReferenceComparison {} : ReferenceComparison::fromJson(again.back().reference);
+        TEST_CHECK(again.size() == 1 && back.passed() && back.checks.size() == 5 && std::abs(back.checks[2].computed - refEx.checks[2].computed) == 0.0 &&
+                       back.parameters == refEx.parameters,
+                   "Test L11: expérience rouverte depuis le disque — référence, écarts et paramètres intacts");
+        std::cout << "[PASS] Test L11: première expérience complète (modèle, calcul sur 2 moteurs, référence analytique, enregistrement, réouverture)" << std::endl;
         ++passed;
     }
     return true;

@@ -65,7 +65,8 @@ QJsonObject ExperimentRecord::toJson() const
                          { "warnings", QJsonArray::fromStringList(warnings) },
                          { "errors", QJsonArray::fromStringList(errors) },
                          { "results", results },
-                         { "provenance", provenance } };
+                         { "provenance", provenance },
+                         { "reference", reference } };
 }
 
 ExperimentRecord ExperimentRecord::fromJson(const QJsonObject& o, QStringList* problems)
@@ -92,6 +93,7 @@ ExperimentRecord ExperimentRecord::fromJson(const QJsonObject& o, QStringList* p
     r.errors = fromArray(o.value("errors"));
     r.results = o.value("results").toObject();
     r.provenance = o.value("provenance").toString();
+    r.reference = o.value("reference").toObject();
     if (r.id.isEmpty() && problems) *problems << QStringLiteral("identifiant manquant");
     return r;
 }
@@ -179,7 +181,8 @@ bool ExperimentJournal::write(ExperimentRecord& record, QString* error) const
 ExperimentRecord ExperimentJournal::recordAnalysis(const TSA::Model::Model& model, const TSA::Grid::GridManager* grids,
                                                    const TSA::Analysis::AnalysisContext& context, bool success, const QString& message,
                                                    const TSA::Analysis::ResultsModel* results, const TSA::Analysis::AnalysisEngineRegistry& registry,
-                                                   const QString& projectFile, const TSA::Analysis::PreparedAnalysis* prepared, QString* error)
+                                                   const QString& projectFile, const TSA::Analysis::PreparedAnalysis* prepared, QString* error,
+                                                   const QJsonObject& reference)
 {
     ExperimentRecord r;
     r.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -196,6 +199,19 @@ ExperimentRecord ExperimentJournal::recordAnalysis(const TSA::Model::Model& mode
     }
     r.projectFile = projectFile;
     r.analysisContext = context.toJson();
+    r.reference = reference;
+    // Référence analytique applicable mais non vérifiée : avertissement de l'expérience
+    if (reference.value("applicable").toBool())
+        for (const auto& v : reference.value("checks").toArray())
+        {
+            const QJsonObject c = v.toObject();
+            if (!c.value("available").toBool()) r.warnings << QStringLiteral("référence : %1 non fournie par le moteur").arg(c.value("label").toString());
+            else if (!c.value("passed").toBool())
+                r.warnings << QStringLiteral("référence : %1 hors tolérance (%2 calculé, %3 attendu)")
+                                  .arg(c.value("label").toString())
+                                  .arg(c.value("computed").toDouble(), 0, 'g', 10)
+                                  .arg(c.value("reference").toDouble(), 0, 'g', 10);
+        }
     const bool ok = success && results && results->isValid();
     r.status = ok ? QStringLiteral("réussi") : QStringLiteral("échec");
     if (!ok) r.errors << (message.isEmpty() ? QStringLiteral("aucun résultat") : message);

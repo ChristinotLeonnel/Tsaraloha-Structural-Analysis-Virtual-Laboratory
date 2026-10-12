@@ -35,6 +35,8 @@ public:
 
 signals:
     void message(const QString& text, const QString& type);
+    /// Copie du modèle d'une expérience enregistrée par l'utilisateur, à ouvrir comme projet.
+    void openModelRequested(const QString& path);
 
 private:
     void showDetails();
@@ -51,6 +53,7 @@ private:
     QLabel* m_verdict = nullptr;
     QPushButton* m_reproduce = nullptr;
     QPushButton* m_openFolder = nullptr;
+    QPushButton* m_resume = nullptr;
 };
 
 } // namespace TSALab::UI

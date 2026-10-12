@@ -69,6 +69,8 @@ add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Validation/ValidationRunner.cpp
     ${LAB_DIR}/Research/Experiments/ExperimentJournal.h
     ${LAB_DIR}/Research/Experiments/ExperimentJournal.cpp
+    ${LAB_DIR}/Research/Reference/AnalyticalReference.h
+    ${LAB_DIR}/Research/Reference/AnalyticalReference.cpp
 )
 tsa_apply_common_settings(TSALab_Research ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab_Research REUSE_FROM TSALab_Model)

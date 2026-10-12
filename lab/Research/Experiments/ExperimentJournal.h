@@ -55,6 +55,7 @@ struct ExperimentRecord
     QStringList warnings, errors;
     QJsonObject results;        ///< résumé chiffré (grandeur → valeur)
     QString provenance;         ///< « calculé par <moteur> <version> le <date> »
+    QJsonObject reference;      ///< référence analytique appliquée au modèle (ReferenceComparison::toJson), vide sinon
     QString folder;             ///< dossier de l'expérience (rempli à la lecture)
 
     QJsonObject toJson() const;
@@ -96,7 +97,7 @@ public:
                                     const TSA::Analysis::AnalysisContext& context, bool success, const QString& message,
                                     const TSA::Analysis::ResultsModel* results, const TSA::Analysis::AnalysisEngineRegistry& registry,
                                     const QString& projectFile, const TSA::Analysis::PreparedAnalysis* prepared = nullptr,
-                                    QString* error = nullptr);
+                                    QString* error = nullptr, const QJsonObject& reference = {});
     /// Enregistre une exécution du banc de validation (bilan, moteurs, cas).
     ExperimentRecord recordValidation(const TSA::Validation::BenchmarkReport& report, QString* error = nullptr);
 

@@ -5,6 +5,7 @@
 #include "LabUI/ValidationPage.h"
 #include "LabUI/ExperimentsPage.h"
 #include "Research/Experiments/ExperimentJournal.h"
+#include "Research/Reference/AnalyticalReference.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
@@ -126,11 +127,20 @@ LabMainWindow::LabMainWindow(QWidget* parent)
                 const auto results = a.results();
                 const QString project = m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString();
                 QString error;
+                // Référence analytique : reconnue dans le modèle réel, hypothèses vérifiées, comparée aux résultats
+                const auto reference = TSALab::Research::simplySupportedCentralLoad(m_session->model(), context, success ? results.get() : nullptr);
                 TSALab::Research::ExperimentJournal journal(TSALab::Research::ExperimentJournal::directoryForProject(project));
                 const auto rec = journal.recordAnalysis(m_session->model(), &m_session->grids(), context, success, message,
-                                                        success ? results.get() : nullptr, a.registry(), project, &prepared, &error);
+                                                        success ? results.get() : nullptr, a.registry(), project, &prepared, &error, reference.toJson());
                 if (!error.isEmpty()) log(tr("Journal d'expériences : %1").arg(error), QStringLiteral("WARN"));
                 else log(tr("Expérience enregistrée : %1 (%2)").arg(rec.title, rec.status));
+                if (reference.compared())
+                {
+                    int ok = 0;
+                    for (const auto& c : reference.checks) ok += c.available && c.passed;
+                    log(tr("Référence analytique (%1) : %2 / %3 vérification(s) dans la tolérance").arg(reference.title).arg(ok).arg(reference.checks.size()),
+                        reference.passed() ? QStringLiteral("SYS") : QStringLiteral("WARN"));
+                }
                 m_experiments->setDirectory(journal.directory());
             });
     connect(m_validation, &ValidationPage::finished, this, [this](const TSA::Validation::BenchmarkReport& report) {
@@ -144,6 +154,12 @@ LabMainWindow::LabMainWindow(QWidget* parent)
     });
     connect(m_validation, &ValidationPage::message, this, [this](const QString& text, const QString& type) { log(text, type); });
     connect(m_experiments, &ExperimentsPage::message, this, [this](const QString& text, const QString& type) { log(text, type); });
+    // Reprise du modèle d'une expérience : copie enregistrée par l'utilisateur, ouverte comme projet (la copie figée
+    // du journal n'est jamais modifiée : l'expérience reste rejouable)
+    connect(m_experiments, &ExperimentsPage::openModelRequested, this, [this](const QString& path) {
+        if (!maybeSave()) return;
+        openProjectFile(path);
+    });
     connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::logMessage, this,
             [this](const QString& text, const QString& type) { log(text, type); });
     connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::settingsChanged, this, &LabMainWindow::updateTitle);
