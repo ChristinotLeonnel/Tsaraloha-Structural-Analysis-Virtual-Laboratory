@@ -94,16 +94,42 @@ utilisait une taille inexistante échoue désormais, au lieu de calculer avec un
 Pendant les essais d'interface, les réglages de l'utilisateur ont été sauvegardés puis restaurés à l'identique : 4 clés
 du registre et `shortcut.txt`. Les fichiers créés par les essais ont été supprimés.
 
+## 12/10/2026 — suite (après fusion locale)
+
+Fusions locales sans poussée : TSA `main` `df8e0d8`, TSALab `main` `ea595e1`. Nouvelles branches, à fusionner dans le
+même ordre (TSA d'abord) :
+- TSA `feature/fea-mindlin` : cas FEA-07, annotation de FEA-01, `BENCHMARKS.md` ;
+- TSALab `feature/fea-mindlin` : tests L9 (28 cas) et L13 (FEA-07), documentation.
+
+## 12/10/2026 — maillage dans TSALab
+
+Branches à fusionner dans cet ordre : TSA `feature/mesh-shared` (contient `feature/fea-mindlin`), puis TSALab
+`feature/maillage-labo` (contient `feature/fea-mindlin`).
+
+| Dépôt | Changement |
+| :--- | :--- |
+| TSA | `applyMeshToAnalysis` partagé (`UI/Mesh/MeshAnalysisBridge`) ; `MainWindow` lui délègue, sans changement de comportement |
+| TSA | `AnalysisManagerPanel::setContextPreparer` : le contexte du calcul est complété par le maillage, sans être enregistré dans les réglages du projet |
+| TSA | validation : avec des coques transmises, trois avertissements faux ne sont plus émis (charges surfaciques ignorées, dalles « non calculées », modèle « sans élément filaire ») ; test 390 |
+| TSALab | menu Maillage (paramètres, génération Gmsh, affichage, déplacements sur le maillage, qualité, suppression), maillage transmis au calcul |
+| TSALab | exemple « Plaque carrée — appui simple dur » et référence analytique de Mindlin (`squarePlateHardSupport`) ; test L14 |
+
+Vérifié dans TSALab réel : exemple ouvert → Maillage ▸ Générer (Gmsh 4.15.2, 576 quadrangles, 0 erreur) → Calculer
+(576 coques OpenSees, aucun avertissement) → expérience enregistrée avec la référence de Mindlin : flèche à 0,059 %,
+réactions exactes.
+
 ## Incompatibilités et limites connues
 
 | Fonction de TSA | Pourquoi elle n'est pas dans TSALab | Condition de reprise |
 | :--- | :--- | :--- |
-| Maillage interactif (`MeshController` : génération Gmsh, qualité, vue du maillage) | classe de la fenêtre de TSA (`UI_MAINWINDOW_SOURCES`) | la déplacer dans la couche widgets, avec les suites `mesh`, `meshview` et `surfaces` |
+| Maillage interactif | **repris le 12/10/2026** (voir ci-dessous) | — |
 | Onglets multi-projets (`AppShell`) | fenêtre de TSA ; un seul serveur d'automatisation à l'écoute | onglets de sessions dans `LabMainWindow` |
 | Ruban de TSA | TSALab a sa propre fenêtre et ses menus | aucune (choix d'interface) |
 
-La chaîne de calcul des coques (Gmsh → OpenSees) **fonctionne** dans TSALab : le banc de validation l'exécute
-(FEA-01 à FEA-06). Seule l'interface de maillage manque.
+**Correction d'un constat antérieur** : `MeshController`, `MeshSettingsPanel` et `MeshQualityPanel` étaient déjà dans
+la couche widgets partagée. Seuls le câblage et la transmission au calcul étaient dans la fenêtre de TSA
+(`MainWindow_Mesh.cpp`). La transmission au calcul est maintenant partagée (`UI/Mesh/MeshAnalysisBridge`) et TSALab a
+son menu Maillage.
 
 ## Procédure pour la prochaine synchronisation
 

@@ -67,4 +67,20 @@ struct ReferenceComparison
 ReferenceComparison simplySupportedCentralLoad(const TSA::Model::Model& model, const TSA::Analysis::AnalysisContext& context,
                                                const TSA::Analysis::ResultsModel* results);
 
+/// Deuxième problème : plaque carrée de Mindlin, appui simple « dur » sur les quatre bords (translations et rotation
+/// tangentielle au bord bloquées), pression uniforme q (cas FEA-07 du banc).
+///   w_centre = α·q·a⁴/D + β·q·a²/(κ·G·e), D = E·e³/(12(1−ν²)), G = E/(2(1+ν)), κ = 5/6,
+///   α = 0,00406235 (Navier), β = 0,0736714 (moment de Marcus) — relation exacte de Wang, Lim, Reddy et Lee (2001).
+///   Σ R_z = q·a².
+/// Hypothèses vérifiées : une seule dalle (formulation coque, sans ouverture), carrée, horizontale, alignée sur les axes ;
+/// aucune barre ni voile ; appuis de bord durs sur les quatre côtés, sans raideur ; une seule pression uniforme
+/// (gravité) ; poids propre exclu ; maillage transmis au calcul. La flèche est jugée avec une tolérance de 1 % (erreur
+/// de discrétisation, voir l'étude de convergence de FEA-07).
+ReferenceComparison squarePlateHardSupport(const TSA::Model::Model& model, const TSA::Analysis::AnalysisContext& context,
+                                           const TSA::Analysis::ResultsModel* results);
+
+/// Référence adaptée au modèle : plaque si le modèle contient des dalles, poutre sinon.
+ReferenceComparison analyticalReference(const TSA::Model::Model& model, const TSA::Analysis::AnalysisContext& context,
+                                        const TSA::Analysis::ResultsModel* results);
+
 } // namespace TSALab::Research

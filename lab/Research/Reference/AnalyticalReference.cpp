@@ -4,10 +4,13 @@
 #include "Analysis/ResultsModel.h"
 #include "Model/Model.h"
 #include "Model/Load/LoadManager.h"
+#include "Model/Load/SurfaceLoad.h"
+#include "Model/Slab.h"
 
 #include <QJsonArray>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -270,6 +273,129 @@ ReferenceComparison simplySupportedCentralLoad(const Model& model, const TSA::An
         if (!c.available) r.warnings << QStringLiteral("%1 : grandeur non fournie par le moteur (non disponible, non remplacée)").arg(c.label);
     }
     return r;
+}
+
+ReferenceComparison squarePlateHardSupport(const Model& model, const TSA::Analysis::AnalysisContext& ctx, const TSA::Analysis::ResultsModel* results)
+{
+    ReferenceComparison r;
+    r.problemId = QStringLiteral("square-plate-hard-support");
+    r.title = QStringLiteral("Plaque carrée, appui simple dur, pression uniforme (Mindlin)");
+    auto fail = [&](const QString& why) { r.violations << why; };
+
+    if (!model.beams().empty() || !model.trussMembers().empty() || !model.cables().empty() || !model.walls().empty() || !model.foundations().empty())
+        fail(QStringLiteral("le modèle contient d'autres éléments que la dalle (barres, voiles, fondations)"));
+    if (model.slabs().size() != 1)
+    {
+        fail(QStringLiteral("une seule dalle attendue (%1 dans le modèle)").arg(model.slabs().size()));
+        return r;
+    }
+    const auto& [slabId, slab] = *model.slabs().begin();
+    if (slab.formulation() != SurfaceFormulation::Shell) fail(QStringLiteral("la dalle n'est pas calculée en coque"));
+    if (!slab.openings().empty()) fail(QStringLiteral("la dalle a des ouvertures"));
+    const auto& ids = slab.nodeIds();
+    if (ids.size() != 4)
+    {
+        fail(QStringLiteral("la dalle n'a pas quatre sommets"));
+        return r;
+    }
+    std::vector<const Node*> p;
+    for (int id : ids) p.push_back(model.getNode(id));
+    if (std::any_of(p.begin(), p.end(), [](const Node* n) { return !n; }))
+    {
+        fail(QStringLiteral("sommet de dalle introuvable"));
+        return r;
+    }
+    const double a = std::hypot(p[1]->x() - p[0]->x(), p[1]->y() - p[0]->y());
+    for (int k = 0; k < 4; ++k)
+    {
+        const Node* u = p[k];
+        const Node* v = p[(k + 1) % 4];
+        const double dx = v->x() - u->x(), dy = v->y() - u->y();
+        if (std::abs(u->z() - p[0]->z()) > 1e-9) fail(QStringLiteral("la dalle n'est pas horizontale"));
+        if (std::abs(std::hypot(dx, dy) - a) > 1e-9 * a) fail(QStringLiteral("la dalle n'est pas carrée"));
+        if (std::abs(dx) > 1e-9 * a && std::abs(dy) > 1e-9 * a) fail(QStringLiteral("la dalle n'est pas alignée sur les axes X et Y"));
+    }
+    r.violations.removeDuplicates();
+    if (!r.violations.isEmpty()) return r;
+
+    // Appuis de bord : translations et rotation tangentielle bloquées, rotation de flexion libre, aucune raideur
+    for (int e = 0; e < 4; ++e)
+    {
+        std::array<bool, 6> fixed {};
+        bool spring = false;
+        for (const auto& sp : slab.edgeSupports())
+            if (sp.edge == -1 || sp.edge == e)
+                for (int d = 0; d < 6; ++d) fixed[d] = fixed[d] || sp.fixed[d], spring = spring || sp.stiffness[d] > 0.0;
+        const bool alongX = std::abs(p[(e + 1) % 4]->x() - p[e]->x()) > 1e-9 * a;
+        const int tangential = alongX ? 4 : 3, bending = alongX ? 3 : 4;   // ry pour un bord selon X, rx pour un bord selon Y
+        if (!fixed[0] || !fixed[1] || !fixed[2]) fail(QStringLiteral("bord %1 : translations non toutes bloquées").arg(e + 1));
+        if (!fixed[tangential]) fail(QStringLiteral("bord %1 : rotation tangentielle libre (appui « mou », hors du domaine de la formule)").arg(e + 1));
+        if (fixed[bending]) fail(QStringLiteral("bord %1 : rotation de flexion bloquée (encastrement)").arg(e + 1));
+        if (spring) fail(QStringLiteral("bord %1 : appui élastique").arg(e + 1));
+    }
+
+    // Chargement
+    const auto& lm = model.loadManager();
+    double q = 0.0;
+    int pressures = 0;
+    for (const auto& [lid, sl] : lm.surfaceLoads())
+    {
+        if (!includedCase(ctx, sl.loadCaseId)) continue;
+        ++pressures;
+        if (sl.targetKind != SurfaceTargetKind::Slab || sl.surfaceId != slabId || sl.distribution != SurfaceLoadDistribution::Uniform ||
+            sl.direction != SurfaceLoadDirection::Gravity || sl.zone || sl.gradU != 0.0 || sl.gradV != 0.0)
+            fail(QStringLiteral("charge surfacique non uniforme, partielle ou non verticale"));
+        q += sl.value;
+    }
+    if (pressures != 1) fail(QStringLiteral("une seule pression uniforme attendue (%1 dans les cas calculés)").arg(pressures));
+    for (const auto& [nid, nl] : lm.nodalLoads())
+        if (includedCase(ctx, nl.loadCaseId())) fail(QStringLiteral("charges nodales présentes"));
+    if (ctx.combinationId > 0) fail(QStringLiteral("calcul d'une combinaison (cas de charge attendu)"));
+    if (ctx.common.includeSelfWeight) fail(QStringLiteral("poids propre inclus (la formule suppose la seule pression q)"));
+    if (ctx.surfaces.empty() || !ctx.common.useGeneratedMesh) fail(QStringLiteral("maillage non transmis au calcul : la dalle n'est pas calculée"));
+    if (std::abs(q) <= 1e-12) fail(QStringLiteral("pression nulle"));
+    r.violations.removeDuplicates();
+    if (!r.violations.isEmpty()) return r;
+
+    // Valeurs de référence (kN, m)
+    const bool kN = !results || results->units().force != "N";
+    const double E = slab.material().E / 1000.0, nu = slab.material().nu, e = slab.thickness();
+    const double D = E * e * e * e / (12.0 * (1.0 - nu * nu)), G = E / (2.0 * (1.0 + nu)), kappa = 5.0 / 6.0;
+    const double alpha = 0.004062352660675069, beta = 0.07367135326539033;
+    const double w = -(alpha * q * std::pow(a, 4) / D + beta * q * a * a / (kappa * G * e));
+    r.applicable = true;
+    r.hypotheses << QStringLiteral("dalle carrée a = %1 m, e = %2 m, horizontale, coque sans ouverture").arg(a, 0, 'g', 10).arg(e, 0, 'g', 10)
+                 << QStringLiteral("appui simple dur sur les quatre bords (translations et rotation tangentielle bloquées)")
+                 << QStringLiteral("pression uniforme q = %1 kN/m², poids propre exclu").arg(q, 0, 'g', 10)
+                 << QStringLiteral("théorie de Mindlin, κ = 5/6 (ElasticMembranePlateSection) ; %1").arg(QString::fromStdString(ctx.meshLabel));
+    r.parameters = QJsonObject { { "a_m", a }, { "e_m", e }, { "E_kPa", E }, { "nu", nu }, { "q_kPa", q }, { "mesh", QString::fromStdString(ctx.meshLabel) } };
+
+    ReferenceCheck cw;
+    cw.quantity = QStringLiteral("surface:uz:absmax"), cw.label = QStringLiteral("flèche au centre"), cw.formula = QStringLiteral("α·q·a⁴/D + β·q·a²/(κ·G·e)");
+    cw.unit = QStringLiteral("m"), cw.reference = w, cw.tolRel = 1e-2;
+    ReferenceCheck cr;
+    cr.quantity = QStringLiteral("reactionsum:fz"), cr.label = QStringLiteral("somme des réactions"), cr.formula = QStringLiteral("q·a²");
+    cr.unit = kN ? QStringLiteral("kN") : QStringLiteral("N"), cr.reference = q * a * a * (kN ? 1.0 : 1000.0);
+    if (results && results->isValid())
+    {
+        double best = 0.0;
+        for (const auto& [id, d] : results->surfaceNodeDisplacements())
+            if (std::abs(d.uz) > std::abs(best)) best = d.uz;
+        if (!results->surfaceNodeDisplacements().empty()) cw.computed = best, cw.available = true;
+        cr.computed = results->equilibrium().reactionFz, cr.available = true;
+    }
+    for (auto* c : { &cw, &cr })
+    {
+        finish(*c);
+        if (results && !c->available) r.warnings << QStringLiteral("%1 : grandeur non fournie par le moteur (non disponible, non remplacée)").arg(c->label);
+        r.checks.push_back(*c);
+    }
+    return r;
+}
+
+ReferenceComparison analyticalReference(const Model& model, const TSA::Analysis::AnalysisContext& ctx, const TSA::Analysis::ResultsModel* results)
+{
+    return model.slabs().empty() ? simplySupportedCentralLoad(model, ctx, results) : squarePlateHardSupport(model, ctx, results);
 }
 
 } // namespace TSALab::Research
