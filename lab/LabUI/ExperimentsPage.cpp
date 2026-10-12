@@ -1,6 +1,11 @@
 #include "ExperimentsPage.h"
 
+#include "Research/Reference/AnalyticalReference.h"
+
 #include <QDesktopServices>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QDir>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -23,6 +28,35 @@ namespace TSALab::UI
 namespace
 {
 QString num(double v) { return QLocale(QLocale::French).toString(v, 'g', 10); }
+
+/// Référence analytique de l'expérience : hypothèses, valeurs, écarts ; ou raisons de non-application.
+QString referenceHtml(const QJsonObject& ref)
+{
+    if (ref.isEmpty()) return QString();
+    const auto ar = Research::ReferenceComparison::fromJson(ref);
+    QString h = QObject::tr("<p><b>Référence analytique</b> — %1</p>").arg(ar.title.toHtmlEscaped());
+    if (!ar.applicable)
+    {
+        h += QObject::tr("<p>Non appliquée : hypothèse(s) non remplie(s)</p><ul>");
+        for (const auto& v : ar.violations) h += QStringLiteral("<li>%1</li>").arg(v.toHtmlEscaped());
+        return h + QStringLiteral("</ul>");
+    }
+    h += QObject::tr("<p>Hypothèses vérifiées :</p><ul>");
+    for (const auto& v : ar.hypotheses) h += QStringLiteral("<li>%1</li>").arg(v.toHtmlEscaped());
+    h += QObject::tr("</ul><table border='1' cellspacing='0' cellpadding='3'><tr><th>Grandeur</th><th>Formule</th><th>Référence</th><th>Calculée</th>"
+                     "<th>Écart abs.</th><th>Écart rel.</th><th>Tolérance</th><th>État</th></tr>");
+    for (const auto& c : ar.checks)
+    {
+        const QString rel = !c.available ? QStringLiteral("—") : std::isnan(c.relError) ? QStringLiteral("réf. ≈ 0") : num(c.relError);
+        const QString state = !c.available ? QObject::tr("NON DISPONIBLE") : c.passed ? QObject::tr("RÉUSSI") : QObject::tr("ÉCHEC");
+        h += QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3 %4</td><td>%5</td><td>%6</td><td>%7</td><td>%8</td><td>%9</td></tr>")
+                 .arg(c.label.toHtmlEscaped(), c.formula.toHtmlEscaped(), num(c.reference), c.unit, c.available ? num(c.computed) : QStringLiteral("—"),
+                      c.available ? num(c.absError) : QStringLiteral("—"), rel, QStringLiteral("%1 rel. + %2 abs.").arg(num(c.tolRel), num(c.tolAbs)), state);
+    }
+    h += QStringLiteral("</table>");
+    for (const auto& w : ar.warnings) h += QStringLiteral("<p>⚠ %1</p>").arg(w.toHtmlEscaped());
+    return h;
+}
 } // namespace
 
 ExperimentsPage::ExperimentsPage(QWidget* parent)
@@ -37,8 +71,32 @@ ExperimentsPage::ExperimentsPage(QWidget* parent)
     auto* refresh = new QPushButton(tr("Actualiser"), this);
     m_reproduce = new QPushButton(tr("Rejouer le calcul"), this);
     m_openFolder = new QPushButton(tr("Ouvrir le dossier"), this);
+    auto* otherJournal = new QPushButton(tr("Ouvrir un journal…"), this);
+    m_resume = new QPushButton(tr("Reprendre le modèle…"), this);
+    otherJournal->setToolTip(tr("Consulter les expériences d'un autre projet (dossier <projet>.experiments) ; le projet ouvert n'est pas modifié"));
+    m_resume->setToolTip(tr("Enregistre une copie du modèle figé de l'expérience et l'ouvre comme projet (la copie figée reste intacte)"));
     m_reproduce->setToolTip(tr("Recharge le modèle figé, relance le même calcul (mêmes réglages, moteurs de ce poste) et compare les résultats"));
-    for (QWidget* w : std::initializer_list<QWidget*> { refresh, m_reproduce, m_openFolder }) bar->addWidget(w);
+    for (QWidget* w : std::initializer_list<QWidget*> { refresh, m_reproduce, m_openFolder, otherJournal, m_resume }) bar->addWidget(w);
+    connect(otherJournal, &QPushButton::clicked, this, [this] {
+        const QString d = QFileDialog::getExistingDirectory(this, tr("Journal d'expériences (dossier .experiments)"), m_directory);
+        if (!d.isEmpty()) setDirectory(d);
+    });
+    connect(m_resume, &QPushButton::clicked, this, [this] {
+        const auto* r = selected();
+        if (!r || r->modelSnapshot.isEmpty()) return;
+        const QString src = QDir(r->folder).filePath(r->modelSnapshot);
+        const QString suffix = QFileInfo(src).suffix();
+        const QString proposed = QDir(QFileInfo(m_directory).absolutePath()).filePath(QStringLiteral("Reprise-%1.%2").arg(r->id.left(8), suffix));
+        const QString dst = QFileDialog::getSaveFileName(this, tr("Reprendre le modèle de l'expérience"), proposed, tr("Projets (*.%1)").arg(suffix));
+        if (dst.isEmpty()) return;
+        QFile::remove(dst);
+        if (!QFile::copy(src, dst))
+        {
+            emit message(tr("Copie du modèle impossible vers %1").arg(QDir::toNativeSeparators(dst)), QStringLiteral("WARN"));
+            return;
+        }
+        emit openModelRequested(dst);
+    });
     bar->addStretch();
     root->addLayout(bar);
 
@@ -128,6 +186,7 @@ void ExperimentsPage::showDetails()
 {
     const auto* r = selected();
     m_reproduce->setEnabled(r && r->kind == QLatin1String("analysis") && !r->modelSnapshot.isEmpty() && !m_thread);
+    m_resume->setEnabled(r && !r->modelSnapshot.isEmpty());
     if (!r)
     {
         m_details->setHtml(tr("<p>Aucune expérience sélectionnée.</p>"));
@@ -149,6 +208,7 @@ void ExperimentsPage::showDetails()
                           "<b>Projet</b> : %7<br><b>Modèle figé</b> : %8 (SHA-256 %9)<br><b>Unités</b> : %10<br><b>Provenance</b> : %11</p>"
                           "<p><b>Avertissements</b> : %12</p><p><b>Erreurs</b> : %13</p>"
                           "<p><b>Résultats</b></p><table>%14</table>"
+                          "%16"
                           "<p><b>Hypothèses et paramètres du calcul</b></p><pre>%15</pre>")
                            .arg(r->title.toHtmlEscaped(), r->date, r->status, r->labVersion, r->engineName.toHtmlEscaped(),
                                 r->engineVersion.isEmpty() && r->kind == "analysis" ? tr("(version non lue)") : r->engineVersion,
@@ -156,7 +216,7 @@ void ExperimentsPage::showDetails()
                                 r->modelSnapshot.isEmpty() ? tr("aucun") : r->modelSnapshot, r->modelHash.left(16) + QStringLiteral("…"))
                            .arg(units.isEmpty() ? tr("—") : units, r->provenance.toHtmlEscaped(), list(r->warnings), list(r->errors),
                                 results.isEmpty() ? tr("<tr><td>aucun résultat</td></tr>") : results,
-                                QString::fromUtf8(QJsonDocument(r->analysisContext).toJson(QJsonDocument::Indented)).toHtmlEscaped()));
+                                QString::fromUtf8(QJsonDocument(r->analysisContext).toJson(QJsonDocument::Indented)).toHtmlEscaped(), referenceHtml(r->reference)));
 }
 
 void ExperimentsPage::reproduceSelected()

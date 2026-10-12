@@ -14,15 +14,21 @@
 #include "Model/Load/LoadManager.h"
 #include "Plugins/PluginManager.h"
 #include "Project/ProjectSession.h"
+#include "Project/ProjectManager.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 #include "Research/Solver/SolverExperiment.h"
 #include "Research/Validation/ValidationRunner.h"
 #include "Research/Experiments/ExperimentJournal.h"
+#include "Research/Reference/AnalyticalReference.h"
+#include "Research/Validation/MeshConvergence.h"
+#include "Analysis/ResultsExport.h"
 #include "Blueprint/BlueprintScript.h"
 
 #include <QApplication>
 #include <QTemporaryDir>
+#include <variant>
+#include <QImage>
 #include <QFile>
 #include <QDir>
 
@@ -47,7 +53,7 @@ using namespace TSALab::Research;
 namespace
 {
 
-constexpr int kLabTests = 7;
+constexpr int kLabTests = 10;
 
 bool runSuite_Lab(int& passed)
 {
@@ -139,6 +145,21 @@ bool runSuite_Lab(int& passed)
             else if (ex.id == "validation-bench")
                 TEST_CHECK(!r.log.empty() && r.log.back().find("benchmark(s) validé(s)") != std::string::npos,
                            "Test L6: rapport du banc de validation dans le journal");
+            else if (ex.id == "simply-supported-experiment")
+            {
+                // Chaîne complète en nœuds : modèle, propriétés, calcul, extraction, comparaison
+                for (const auto& line : r.log) std::cout << "    " << line << std::endl;
+                int compared = 0;
+                for (const auto& line : r.log) compared += line.find("dans la tolérance") != std::string::npos;
+                TEST_CHECK(m.nodes().size() == 3 && m.beams().size() == 2 && m.beams().begin()->second.section().name == "IPE 300" && compared == 3 &&
+                               r.log.back().find("référence (flèche, réaction, moment) : vrai") != std::string::npos,
+                           "Test L6: expérience en nœuds — 3 comparaisons dans la tolérance (flèche, réaction, moment)");
+                const auto ref = TSALab::Research::simplySupportedCentralLoad(m, session.analysis().context(), session.analysis().results().get());
+                TEST_CHECK(ref.applicable && ref.passed(), "Test L6: le modèle produit par le graphe est reconnu par la référence analytique du laboratoire");
+                TSA::Project::ProjectSession other;
+                const auto r2 = TSA::Blueprint::Runner(lib, back, &other).run({ { "section", std::string("IPE 999") } });
+                TEST_CHECK(!r2.ok && r2.message.find("catalogue") != std::string::npos, "Test L6: section hors catalogue — exécution arrêtée, raison donnée");
+            }
         }
         std::cout << "[PASS] Test L6: " << BlueprintExamples::catalog().size() << " Blueprints d'exemple exécutés" << std::endl;
         ++passed;
@@ -177,7 +198,7 @@ bool runSuite_Lab(int& passed)
             }
             ++planar;
         }
-        TEST_CHECK(planar == 5, "Test L7: 5 exemples plans calculés");
+        TEST_CHECK(planar == 6, "Test L7: 6 exemples plans calculés");
         // Portique spatial : aucun plan, le moteur 2D refuse explicitement.
         TSA::Project::ProjectSession space;
         TEST_CHECK(Examples::build("frame-3d", space.model()), "Test L7: portique spatial construit");
@@ -248,7 +269,7 @@ bool runSuite_Lab(int& passed)
         QTemporaryDir tmp;
         {
             QFile f(tmp.filePath("BAD.json"));
-            f.open(QIODevice::WriteOnly);
+            TEST_CHECK(f.open(QIODevice::WriteOnly), "fichier d'essai ouvert en écriture");
             f.write(R"({"format":"tsa.benchmark/1","id":"BAD","title":"Cas invalide","checks":[{"quantity":"node:1:quoi","formula":"1/"}]})");
         }
         const auto bad = loadCases(tmp.filePath("BAD.json"));
@@ -277,7 +298,7 @@ bool runSuite_Lab(int& passed)
         // Références externes : valeur fausse détectée ; référence nulle → écart relatif non défini, tolérance absolue
         {
             QFile f(tmp.filePath("ref.csv"));
-            f.open(QIODevice::WriteOnly);
+            TEST_CHECK(f.open(QIODevice::WriteOnly), "fichier d'essai ouvert en écriture");
             f.write("case,quantity,value,unit,source,rel_tol,abs_tol\n"
                     "RDM-01,node:2:ux,1.0,m,logiciel fictif (essai d'erreur),0.01,0\n"
                     "RDM-01,node:2:uz,0,m,symétrie (référence nulle),0,1e-9\n");
@@ -341,7 +362,7 @@ bool runSuite_Lab(int& passed)
         // Copie figée modifiée : rejeu refusé (empreinte)
         {
             QFile f(QDir(rec.folder).filePath(rec.modelSnapshot));
-            f.open(QIODevice::Append);
+            TEST_CHECK(f.open(QIODevice::Append), "fichier d'essai ouvert en écriture");
             f.write("x");
         }
         const auto tampered = ExperimentJournal::reproduce(list[0]);
@@ -364,12 +385,233 @@ bool runSuite_Lab(int& passed)
         QDir(journal.directory()).mkpath("corrompu");
         {
             QFile f(QDir(journal.directory()).filePath("corrompu/record.json"));
-            f.open(QIODevice::WriteOnly);
+            TEST_CHECK(f.open(QIODevice::WriteOnly), "fichier d'essai ouvert en écriture");
             f.write("{pas du json");
         }
         TEST_CHECK(journal.records().size() == 3, "Test L10: enregistrement illisible ignoré (" << journal.records().size() << " lus)");
         TEST_CHECK(ExperimentJournal::directoryForProject("C:/Etudes/Pont.tsalab").endsWith("Pont.experiments"), "Test L10: journal à côté du projet");
         std::cout << "[PASS] Test L10: journal d'expériences (enregistrement, relecture, rejeu, intégrité)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L11 : première expérience complète — poutre bi-appuyée, force ponctuelle centrale, référence d'Euler-Bernoulli
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        QTemporaryDir tmp;
+
+        // 1-3. Modèle créé par les commandes du registre (chemin de l'utilisateur : console, Blueprint, MCP)
+        TSA::Project::ProjectSession user;
+        const char* script[] = { "model.create_node position=0,0,0", "model.create_node position=3,0,0", "model.create_node position=6,0,0",
+                                 "model.create_beam start=1 end=2 section=\"IPE 300\" material=S235", "model.create_beam start=2 end=3 section=\"IPE 300\" material=S235",
+                                 "model.set_support node=1 type=PINNED", "model.set_support node=3 type=ROLLER" };
+        for (const char* line : script)
+        {
+            const auto r = TSA::Automation::executeCommandLine(reg, user, line);
+            TEST_CHECK(r.ok, "Test L11: commande « " << line << " » (" << r.message << ")");
+        }
+        const auto lc = TSA::Automation::executeCommandLine(reg, user, "loads.create_case name=P category=live");
+        TEST_CHECK(lc.ok, "Test L11: cas de charge (" << lc.message << ")");
+        const int caseId = static_cast<int>(std::get<long long>(lc.outputs.at("id")));
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, user, ("loads.add_nodal node=2 case=" + std::to_string(caseId) + " fz=-50").c_str()).ok, "Test L11: force de 50 kN à mi-portée");
+
+        // 4-7. Calcul par chaque moteur disponible, comparaison à la référence analytique
+        for (const char* engine : { "custom2d", "opensees" })
+        {
+            auto ctx = user.analysis().context();
+            ctx.common.includeSelfWeight = false;   // hypothèse de la formule
+            ctx.loadCaseIds = { caseId };
+            user.analysis().setContext(ctx);
+            const std::string cmd = std::string("analysis.run engine=") + engine + (std::string(engine) == "custom2d" ? " axis=plan" : "");
+            const auto run = TSA::Automation::executeCommandLine(reg, user, cmd.c_str());
+            TEST_CHECK(run.ok, "Test L11: calcul " << engine << " (" << run.message << ")");
+            const auto results = user.analysis().results();
+            const auto ref = simplySupportedCentralLoad(user.model(), user.analysis().context(), results.get());
+            for (const auto& v : ref.violations) std::cout << "  hypothèse non remplie : " << v.toStdString() << std::endl;
+            for (const auto& c : ref.checks)
+                std::cout << "  " << engine << " — " << c.label.toStdString() << " : " << c.computed << " / " << c.reference << " " << c.unit.toStdString()
+                          << " (écart " << c.absError << ")" << (c.passed ? "" : "  ÉCHEC") << std::endl;
+            TEST_CHECK(ref.applicable && ref.checks.size() == 5 && ref.passed() && ref.warnings.isEmpty(),
+                       "Test L11: " << engine << " — réactions P/2, flèche P·L³/(48EI), M = P·L/4, V = P/2 dans la tolérance 1e-6");
+        }
+        // Valeur de contrôle indépendante : δ = 50·6³/(48·210e6·Iy) avec Iy de l'IPE 300
+        const double iy = TSA::Model::Section::ipe(300).iy();
+        const auto refNow = simplySupportedCentralLoad(user.model(), user.analysis().context(), user.analysis().results().get());
+        TEST_CHECK(std::abs(refNow.checks[2].reference - (-50.0 * 216.0 / (48.0 * 210e6 * iy))) < 1e-15 && std::abs(refNow.checks[3].reference - 75.0) < 1e-12,
+                   "Test L11: valeurs de référence (δ = " << refNow.checks[2].reference << " m, M = " << refNow.checks[3].reference << " kN·m)");
+
+        // Hypothèse non remplie : nommée, aucune comparaison
+        auto withWeight = user.analysis().context();
+        withWeight.common.includeSelfWeight = true;
+        const auto refused = simplySupportedCentralLoad(user.model(), withWeight, user.analysis().results().get());
+        TEST_CHECK(!refused.applicable && refused.checks.empty() && refused.violations.join(" ").contains("poids propre"),
+                   "Test L11: poids propre inclus — référence non appliquée, raison nommée");
+        TSA::Project::ProjectSession portal;
+        Examples::build("portal", portal.model());
+        const auto notThis = simplySupportedCentralLoad(portal.model(), portal.analysis().context(), nullptr);
+        TEST_CHECK(!notThis.applicable && notThis.violations.size() >= 1, "Test L11: portique — reconnu comme hors du domaine de la référence");
+
+        // 1 et 8. Exemple de référence : enregistrer, rouvrir (modèle, réglages), expérience journalisée puis relue
+        TSA::Project::ProjectSession ex;
+        TEST_CHECK(Examples::build("simply-supported-point", ex.model()), "Test L11: exemple de référence construit");
+        TEST_CHECK(ex.analysis().restoreContextFromModel() && !ex.analysis().context().common.includeSelfWeight, "Test L11: réglages de l'exemple (poids propre exclu) relus");
+        const QString file = tmp.filePath(QStringLiteral("Poutre%1").arg(TSA::Product::projectExtension()));
+        QString err;
+        TEST_CHECK(ex.project().saveProject(file, ex.model(), &ex.grids(), QImage(), &err), "Test L11: projet enregistré (" << err.toStdString() << ")");
+        TSA::Project::ProjectSession reopened;
+        TEST_CHECK(reopened.project().openProject(file, reopened.model(), &reopened.grids(), &err), "Test L11: projet rouvert (" << err.toStdString() << ")");
+        TEST_CHECK(reopened.model().nodes().size() == 3 && reopened.model().beams().size() == 2 && reopened.analysis().restoreContextFromModel() &&
+                       !reopened.analysis().context().common.includeSelfWeight,
+                   "Test L11: modèle et réglages de calcul identiques après réouverture");
+        const auto runEx = TSA::Automation::executeCommandLine(reg, reopened, "analysis.run engine=custom2d axis=plan");
+        TEST_CHECK(runEx.ok, "Test L11: exemple rouvert calculé (" << runEx.message << ")");
+        const auto refEx = simplySupportedCentralLoad(reopened.model(), reopened.analysis().context(), reopened.analysis().results().get());
+        ExperimentJournal journal(ExperimentJournal::directoryForProject(file));
+        const auto rec = journal.recordAnalysis(reopened.model(), &reopened.grids(), reopened.analysis().context(), true, QString(),
+                                                reopened.analysis().results().get(), reopened.analysis().registry(), file, nullptr, &err, refEx.toJson());
+        TEST_CHECK(refEx.passed() && rec.reference.value("applicable").toBool() && rec.warnings.isEmpty(), "Test L11: expérience journalisée avec sa référence, sans avertissement");
+        const auto again = ExperimentJournal(ExperimentJournal::directoryForProject(file)).records();
+        const auto back = again.empty() ? ReferenceComparison {} : ReferenceComparison::fromJson(again.back().reference);
+        TEST_CHECK(again.size() == 1 && back.passed() && back.checks.size() == 5 && std::abs(back.checks[2].computed - refEx.checks[2].computed) == 0.0 &&
+                       back.parameters == refEx.parameters,
+                   "Test L11: expérience rouverte depuis le disque — référence, écarts et paramètres intacts");
+        std::cout << "[PASS] Test L11: première expérience complète (modèle, calcul sur 2 moteurs, référence analytique, enregistrement, réouverture)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L12 : laboratoire matriciel — données réellement exportées par le moteur, export CSV, aucune valeur inventée
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSA::Analysis;
+        const auto& reg = TSA::Automation::CommandRegistry::builtIn();
+        TSA::Project::ProjectSession s;
+        TEST_CHECK(Examples::build("simply-supported-point", s.model()) && s.analysis().restoreContextFromModel(), "Test L12: expérience de référence");
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, s, "analysis.run engine=custom2d axis=plan export_system=true").ok, "Test L12: calcul Custom2D, système exporté");
+        const auto r = s.analysis().results();
+        const auto& adv = r->advanced();
+        const std::size_t n = adv.dofMap.equations.size();
+        TEST_CHECK(n > 0 && adv.hasGlobalStiffness && adv.loadVector.size() == n && adv.displacementVector.size() == n,
+                   "Test L12: K, F, U et numérotation des DDL exportés par Custom2D (" << n << " équations)");
+        // K·U = F à partir des seules données exportées
+        std::vector<double> ku(n, 0.0);
+        for (std::size_t q = 0; q < adv.kGlobal.values.size(); ++q) ku[std::size_t(adv.kGlobal.rowIndex[q])] += adv.kGlobal.values[q] * adv.displacementVector[std::size_t(adv.kGlobal.colIndex[q])];
+        double res = 0, fmax = 0, fsum = 0;
+        for (std::size_t i = 0; i < n; ++i) res = std::max(res, std::abs(ku[i] - adv.loadVector[i])), fmax = std::max(fmax, std::abs(adv.loadVector[i])), fsum += adv.loadVector[i];
+        TEST_CHECK(res <= 1e-9 * fmax && std::abs(fsum + 50.0) < 1e-9, "Test L12: K·U = F vérifié sur les données exportées (résidu " << res << ", ΣF = " << fsum << " kN)");
+        std::string err;
+        const std::string fu = ResultsExport::render(*r, ResultsDataset::SystemVectors, ResultsExportFormat::Csv, &err);
+        TEST_CHECK(err.empty() && fu.find("equation,node,dof,F,U,U_source") != std::string::npos && fu.find("-50") != std::string::npos && fu.find(",moteur") != std::string::npos,
+                   "Test L12: export CSV des vecteurs F et U (provenance « moteur ») (" << err << ")");
+        // Custom2D n'exporte pas de matrices élémentaires : transformations refusées avec la raison, jamais inventées
+        std::string errT;
+        const std::string trC = ResultsExport::render(*r, ResultsDataset::Transformations, ResultsExportFormat::Csv, &errT);
+        TEST_CHECK(trC.empty() && errT.find("indisponibles") != std::string::npos, "Test L12: Custom2D — transformations non exportées, refus explicite (" << errT << ")");
+        const std::string kg = ResultsExport::render(*r, ResultsDataset::GlobalStiffness, ResultsExportFormat::Csv, &err);
+        TEST_CHECK(err.empty() && kg.find("row,col,row_dof,col_dof,value") != std::string::npos, "Test L12: export CSV de K globale");
+
+        // OpenSees en extraction avancée : matrices élémentaires (rotation comprise) et K globale exportées
+        {
+            auto ctx = s.analysis().context();
+            QJsonObject os = ctx.settingsFor("opensees");
+            os.insert("extractionLevel", static_cast<int>(ExtractionLevel::Advanced));
+            ctx.engineSettings["opensees"] = os;
+            s.analysis().setContext(ctx);
+        }
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, s, "analysis.run engine=opensees").ok, "Test L12: calcul OpenSees (extraction avancée)");
+        const auto adv2 = s.analysis().results();
+        std::string errA;
+        const std::string trO = ResultsExport::render(*adv2, ResultsDataset::Transformations, ResultsExportFormat::Csv, &errA);
+        int rows = 0;
+        for (char ch : trO) rows += ch == '\n';
+        TEST_CHECK(errA.empty() && rows == 3 && trO.find("x_X,x_Y,x_Z") != std::string::npos && trO.find("elasticBeamColumn") != std::string::npos,
+                   "Test L12: OpenSees — transformations local/global des 2 barres exportées (" << errA << ")");
+        const auto& em = adv2->advanced().elementMatrices;
+        TEST_CHECK(!em.empty() && em.begin()->second.available && em.begin()->second.kLocal.rows == 12 && adv2->advanced().hasGlobalStiffness,
+                   "Test L12: OpenSees — matrices locales 12×12 et K globale exportées");
+        const std::string fuO = ResultsExport::render(*adv2, ResultsDataset::SystemVectors, ResultsExportFormat::Csv, &errA);
+        TEST_CHECK(fuO.find("non exporté par ce moteur") != std::string::npos && fuO.find("déplacements nodaux") != std::string::npos,
+                   "Test L12: OpenSees — F non exporté (colonne vide, signalé), U déduit des déplacements et marqué comme tel");
+
+        // OpenSees en mode léger : aucune matrice exportée → refus explicite, aucune valeur inventée
+        {
+            auto ctx = s.analysis().context();
+            QJsonObject os = ctx.settingsFor("opensees");
+            os.insert("extractionLevel", static_cast<int>(ExtractionLevel::Light));
+            ctx.engineSettings["opensees"] = os;
+            s.analysis().setContext(ctx);
+        }
+        TEST_CHECK(TSA::Automation::executeCommandLine(reg, s, "analysis.run engine=opensees").ok, "Test L12: calcul OpenSees (mode léger)");
+        const auto o = s.analysis().results();
+        std::string e1, e2, e3;
+        const std::string a1 = ResultsExport::render(*o, ResultsDataset::GlobalStiffness, ResultsExportFormat::Csv, &e1);
+        const std::string a2 = ResultsExport::render(*o, ResultsDataset::SystemVectors, ResultsExportFormat::Csv, &e2);
+        const std::string a3 = ResultsExport::render(*o, ResultsDataset::Transformations, ResultsExportFormat::Csv, &e3);
+        std::cout << "  OpenSees léger — K : " << e1 << " | F, U : " << e2 << " | T : " << e3 << std::endl;
+        TEST_CHECK(!o->advanced().hasGlobalStiffness && a1.empty() && !e1.empty(), "Test L12: K globale absente — refus explicite avec la raison du moteur");
+        TEST_CHECK(o->advanced().loadVector.empty() && (a2.empty() ? !e2.empty() : a2.find(",,") != std::string::npos), "Test L12: F non exporté par OpenSees — jamais reconstitué");
+        std::cout << "[PASS] Test L12: laboratoire matriciel (K, F, U, DDL, transformations ; données absentes refusées)" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L13 : convergence en maillage — série structurée du banc, ordre observé, extrapolation, chaîne Gmsh → OpenSees
+    // -------------------------------------------------------------------------
+    {
+        using namespace TSALab::Research;
+        using TSA::Validation::CheckOutcome;
+        using TSA::Validation::ConvergencePoint;
+        // Série synthétique f(h) = 1 + 0,1·h² : ordre 2, Richardson exact
+        CheckOutcome k;
+        k.caseId = "SYN", k.quantity = "surface:uz:absmax", k.reference = 1.0;
+        for (double h : { 1.0, 0.5, 0.25 }) k.convergence.push_back(ConvergencePoint { h, "maillage", true, 1.0 + 0.1 * h * h });
+        auto st = analyseMeshConvergence(k);
+        TEST_CHECK(st.applicable && st.errorDecreasing && std::abs(st.refinementRatio - 2.0) < 1e-12 && std::abs(st.observedOrder - 2.0) < 1e-9 &&
+                       std::abs(st.extrapolated - 1.0) < 1e-12 && st.extrapolatedRelError < 1e-12,
+                   "Test L13: ordre observé 2 et extrapolation de Richardson exacts sur f = 1 + 0,1·h² (p = " << st.observedOrder << ")");
+        const QString csv = meshConvergenceCsv(k, st);
+        TEST_CHECK(csv.contains("mesh_size,mesh,value,rel_error_to_reference,rel_change") && csv.count('\n') == 6 && csv.contains("non calculée par le moteur"),
+                   "Test L13: CSV de convergence (en-tête, 3 maillages, extrapolation signalée comme non issue du moteur)");
+        // Rapport non constant, oscillation, maillage manquant : ordre non calculé, raison donnée
+        CheckOutcome nc = k;
+        nc.convergence[2].meshSize = 0.2;
+        st = analyseMeshConvergence(nc);
+        TEST_CHECK(st.applicable && std::isnan(st.observedOrder) && std::isnan(st.extrapolated) && st.orderNote.contains("non constant"), "Test L13: rapport non constant — ordre non calculé (" << st.orderNote.toStdString() << ")");
+        CheckOutcome osc = k;
+        osc.convergence[2].value = 1.04;
+        st = analyseMeshConvergence(osc);
+        TEST_CHECK(std::isnan(st.observedOrder) && st.orderNote.contains("oscillante") && !st.errorDecreasing, "Test L13: convergence oscillante — ordre non défini, écart non monotone signalé");
+        CheckOutcome miss = k;
+        miss.convergence[1].available = false;
+        st = analyseMeshConvergence(miss);
+        TEST_CHECK(st.applicable && std::isnan(st.observedOrder) && std::isnan(st.rows[1].relErrorToReference) && std::isnan(st.rows[2].relChange),
+                   "Test L13: maillage non calculé — aucune valeur inventée, ordre non calculé");
+        CheckOutcome single;
+        single.reference = 1.0;
+        TEST_CHECK(!analyseMeshConvergence(single).applicable && meshConvergenceCsv(single, analyseMeshConvergence(single)).isEmpty(), "Test L13: calcul unique — pas d'étude");
+
+        // Chaîne réelle : FEA-01 (plaque, Gmsh → coques OpenSees) sur 3 maillages
+        std::vector<TSA::Validation::BenchmarkCase> run;
+        for (const auto& c : loadCases(defaultBenchmarkDirectory()))
+            if (c.benchmark.id == "FEA-01") run.push_back(c.benchmark);
+        TEST_CHECK(run.size() == 1, "Test L13: cas FEA-01 présent");
+        const auto report = runValidation(run, {});
+        const CheckOutcome* uz = nullptr;
+        for (const auto& c : report.cases)
+            for (const auto& ck : c.checks)
+                if (ck.quantity == "surface:uz:absmax") uz = &ck;
+        TEST_CHECK(uz && uz->convergence.size() == 3, "Test L13: FEA-01 — série de 3 maillages enregistrée par le banc");
+        if (uz)
+        {
+            const auto fea = analyseMeshConvergence(*uz);
+            for (const auto& r : fea.rows)
+                std::cout << "  FEA-01 h=" << r.meshSize << " (" << r.mesh.toStdString() << ") uz=" << r.value << " écart réf. " << r.relErrorToReference * 100 << " %" << std::endl;
+            std::cout << "  ordre observé : " << fea.observedOrder << " (" << fea.orderNote.toStdString() << ") ; extrapolé : " << fea.extrapolated << " (écart "
+                      << fea.extrapolatedRelError * 100 << " %)" << std::endl;
+            bool meshes = true;
+            for (const auto& r : fea.rows) meshes = meshes && r.available && !r.mesh.isEmpty();
+            TEST_CHECK(fea.applicable && meshes && uz->passed && fea.rows.back().value == uz->value, "Test L13: FEA-01 — 3 maillages générés et calculés, vérification sur le plus fin réussie");
+        }
+        std::cout << "[PASS] Test L13: convergence en maillage (série du banc, ordre observé, Richardson, chaîne Gmsh → OpenSees)" << std::endl;
         ++passed;
     }
     return true;

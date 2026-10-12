@@ -4,6 +4,9 @@
 #include "Model/Load/LoadCase.h"
 #include "Model/Load/MemberLoad.h"
 #include "Model/Load/NodalLoad.h"
+#include "Analysis/Engine/AnalysisContext.h"
+
+#include <QJsonDocument>
 
 namespace TSALab::Research::Examples
 {
@@ -39,6 +42,34 @@ void buildSimplySupported(Model& model)
     const int bm = model.addBar(a, b, Section::ipe(300), Material::steelS235(), BarRole::Beam, 0.0, "Poutre");
     const int lc = addCase(model, "q uniforme");
     model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, 10.0));
+}
+
+// Poutre bi-appuyée IPE 300 de 6 m, force ponctuelle centrale P = 50 kN au nœud de mi-portée (cas RDM-04 du banc
+// de validation) : référence d'Euler-Bernoulli R = P/2, δ = P·L³/(48·E·I), M = P·L/4. Appuis : rotule (torsion tenue)
+// et appui glissant ; réglages de calcul enregistrés avec le modèle : Custom2D sur le plan du modèle, poids propre
+// EXCLU (hypothèse de la formule), système K·U = F exporté.
+void buildSimplySupportedPoint(Model& model)
+{
+    const int a = model.addNode(0, 0, 0, "", "Appui A");
+    const int c = model.addNode(3, 0, 0, "", "Mi-portée");
+    const int b = model.addNode(6, 0, 0, "", "Appui B");
+    using S = DOFState;
+    model.getNode(a)->setSupport(SupportDefinition::custom(S::Fixed, S::Fixed, S::Fixed, S::Fixed, S::Free, S::Free));
+    model.getNode(b)->setSupport(SupportDefinition::custom(S::Free, S::Fixed, S::Fixed, S::Fixed, S::Free, S::Free));
+    model.addBar(a, c, Section::ipe(300), Material::steelS235(), BarRole::Beam, 0.0, "Poutre AC");
+    model.addBar(c, b, Section::ipe(300), Material::steelS235(), BarRole::Beam, 0.0, "Poutre CB");
+    const int lc = addCase(model, "P centrale");
+    model.loadManager().addNodalLoad(NodalLoad(0, c, lc, 0.0, 0.0, -50.0));
+    TSA::Analysis::AnalysisContext ctx;
+    ctx.engineId = "custom2d";
+    ctx.dimension = TSA::Analysis::AnalysisDimension::Plane2D;
+    ctx.scope.type = TSA::Analysis::ScopeType::ModelPlane;
+    ctx.common.includeSelfWeight = false;
+    ctx.loadCaseIds = { lc };
+    QJsonObject settings = ctx.settingsFor("custom2d");
+    settings.insert(QStringLiteral("exportSystem"), true);
+    ctx.engineSettings["custom2d"] = settings;
+    model.setAnalysisSettingsJson(QJsonDocument(ctx.toJson()).toJson(QJsonDocument::Compact).toStdString());
 }
 
 // Poutre bi-encastrée IPE 300 de 6 m, q = 10 kN/m.
@@ -127,6 +158,9 @@ const std::vector<ExampleInfo>& catalog()
         { "simply-supported", "Poutre bi-appuyée — charge uniforme",
           "IPE 300, L = 6 m, rotule + appui glissant, q = 10 kN/m.",
           "δ = 5·q·L⁴ / (384·E·I) ; M_max = q·L² / 8" },
+        { "simply-supported-point", "Poutre bi-appuyée — charge ponctuelle centrale",
+          "IPE 300, L = 6 m, rotule + appui glissant, P = 50 kN au nœud de mi-portée, poids propre exclu (expérience de référence).",
+          "R = P/2 ; δ = P·L³ / (48·E·I) ; M_max = P·L / 4 (Euler-Bernoulli)" },
         { "fixed-fixed", "Poutre bi-encastrée — charge uniforme",
           "IPE 300, L = 6 m, encastrée aux deux extrémités, q = 10 kN/m.",
           "M_appui = q·L² / 12 ; δ = q·L⁴ / (384·E·I)" },
@@ -147,6 +181,7 @@ bool build(const std::string& id, Model& model)
 {
     if (id == "cantilever") buildCantilever(model);
     else if (id == "simply-supported") buildSimplySupported(model);
+    else if (id == "simply-supported-point") buildSimplySupportedPoint(model);
     else if (id == "fixed-fixed") buildFixedFixed(model);
     else if (id == "portal") buildPortal(model);
     else if (id == "warren-truss") buildWarrenTruss(model);

@@ -16,6 +16,10 @@ const std::vector<Info>& catalog()
         { "node-row", "Rangée de nœuds (boucle)", "Boucle « Pour » : n nœuds espacés d'un pas, paramètres « nombre » et « pas »." },
         { "validation-bench", "Banc de validation des solveurs",
           "Nœud TSALab : benchmarks analytiques + validation croisée de tous les solveurs plans, rapport dans le journal." },
+        { "simply-supported-experiment", "Expérience : poutre bi-appuyée",
+          "Chaîne complète en nœuds : portée, charge et section en paramètres ; géométrie, affectation de section, appuis, "
+          "force centrale, calcul Custom2D sans poids propre ; réaction, moment et flèche comparés à P/2, P·L/4 et "
+          "P·L³/(48·E·I) (E et I lus sur la barre)." },
     };
     return list;
 }
@@ -129,6 +133,95 @@ bool buildBench(Graph& g)
     const int print = b.node("debug.print", 150, 0);
     return b.link(start, "then", bench, "exec") && b.link(bench, "then", print, "exec") && b.link(bench, "report", print, "value");
 }
+bool buildExperiment(Graph& g)
+{
+    g.name = "Expérience : poutre bi-appuyée";
+    g.description = "Poutre bi-appuyée, force centrale : calcul et comparaison aux formules d'Euler-Bernoulli, uniquement par des nœuds.";
+    Builder b(g);
+    const int L = b.param("param.real", "portée", 6.0, -900, 300);
+    const int P = b.param("param.real", "P", 50.0, -900, 420);
+    const int S = b.param("param.text", "section", std::string("IPE 300"), -900, 540);
+
+    // Géométrie : A (0), C (L/2), B (L)
+    const int half = b.node("math.divide", -650, 300);
+    b.value(half, "b", 2.0);
+    const int pC = b.node("math.make_point", -450, 300);
+    const int pB = b.node("math.make_point", -450, 420);
+    bool ok = b.link(L, "value", half, "a") && b.link(half, "result", pC, "x") && b.link(L, "value", pB, "x");
+
+    const int start = b.node("event.start", -900, 0);
+    const int nA = b.node("cmd.model.create_node", -650, 0);
+    b.value(nA, "position", TSA::Blueprint::Point3 { 0, 0, 0 });
+    const int nC = b.node("cmd.model.create_node", -400, 0);
+    const int nB = b.node("cmd.model.create_node", -150, 0);
+    ok = ok && b.link(pC, "point", nC, "position") && b.link(pB, "point", nB, "position");
+    const int b1 = b.node("cmd.model.create_beam", 100, 0);
+    const int b2 = b.node("cmd.model.create_beam", 350, 0);
+    ok = ok && b.link(nA, "id", b1, "start") && b.link(nC, "id", b1, "end") && b.link(nC, "id", b2, "start") && b.link(nB, "id", b2, "end");
+
+    // Propriétés affectées après coup (nœud d'affectation), appuis, cas et force
+    const int s1 = b.node("cmd.model.set_section", 600, 0);
+    const int s2 = b.node("cmd.model.set_section", 850, 0);
+    b.value(s1, "material", std::string("S235"));
+    b.value(s2, "material", std::string("S235"));
+    ok = ok && b.link(b1, "id", s1, "bar") && b.link(S, "value", s1, "section") && b.link(b2, "id", s2, "bar") && b.link(S, "value", s2, "section");
+    const int supA = b.node("cmd.model.set_support", 1100, 0);
+    const int supB = b.node("cmd.model.set_support", 1350, 0);
+    b.value(supA, "type", std::string("pinned"));
+    b.value(supB, "type", std::string("roller"));
+    ok = ok && b.link(nA, "id", supA, "node") && b.link(nB, "id", supB, "node");
+    const int lc = b.node("cmd.loads.create_case", 1600, 0);
+    b.value(lc, "name", std::string("P"));
+    b.value(lc, "category", std::string("live"));
+    const int fz = b.node("math.multiply", 1600, 300);
+    b.value(fz, "b", -1.0);
+    const int load = b.node("cmd.loads.add_nodal", 1850, 0);
+    ok = ok && b.link(P, "value", fz, "a") && b.link(nC, "id", load, "node") && b.link(lc, "id", load, "case") && b.link(fz, "result", load, "fz");
+
+    // Calcul (hypothèse de la formule : poids propre exclu)
+    const int run = b.node("cmd.analysis.run", 2100, 0);
+    b.value(run, "engine", std::string("custom2d"));
+    b.value(run, "axis", std::string("plan"));
+    b.value(run, "self_weight", std::string("non"));
+
+    // Extraction
+    const int bar = b.node("cmd.query.bar", 2350, 0);
+    const int disp = b.node("cmd.results.node_displacement", 2600, 0);
+    const int reac = b.node("cmd.results.node_reaction", 2850, 0);
+    const int forces = b.node("cmd.results.member_forces", 3100, 0);
+    ok = ok && b.link(b1, "id", bar, "id") && b.link(nC, "id", disp, "id") && b.link(nA, "id", reac, "id") && b.link(b1, "id", forces, "id");
+
+    // Références : δ = −P·L³/(48·E·I), R = P/2, M = P·L/4
+    const int l2 = b.node("math.multiply", 2350, 300), l3 = b.node("math.multiply", 2350, 420);
+    const int ei = b.node("math.multiply", 2600, 300), ei48 = b.node("math.multiply", 2600, 420);
+    const int num = b.node("math.multiply", 2850, 300), delta = b.node("math.divide", 2850, 420);
+    b.value(ei48, "b", 48.0);
+    ok = ok && b.link(L, "value", l2, "a") && b.link(L, "value", l2, "b") && b.link(l2, "result", l3, "a") && b.link(L, "value", l3, "b") &&
+         b.link(bar, "e", ei, "a") && b.link(bar, "iy", ei, "b") && b.link(ei, "result", ei48, "a") && b.link(fz, "result", num, "a") &&
+         b.link(l3, "result", num, "b") && b.link(num, "result", delta, "a") && b.link(ei48, "result", delta, "b");
+    const int rRef = b.node("math.divide", 3100, 300);
+    b.value(rRef, "b", 2.0);
+    const int pl = b.node("math.multiply", 3350, 300), mRef = b.node("math.divide", 3350, 420);
+    b.value(mRef, "b", 4.0);
+    ok = ok && b.link(P, "value", rRef, "a") && b.link(P, "value", pl, "a") && b.link(L, "value", pl, "b") && b.link(pl, "result", mRef, "a");
+    const int uz = b.node("math.break_point", 3100, 540), rz = b.node("math.break_point", 3350, 540);
+    ok = ok && b.link(disp, "displacement", uz, "point") && b.link(reac, "force", rz, "point");
+
+    // Comparaisons (tolérance relative 1e-6 par défaut), verdicts dans le journal
+    const int cD = b.node("cmd.compare.values", 3350, 0);
+    const int cR = b.node("cmd.compare.values", 3600, 0);
+    const int cM = b.node("cmd.compare.values", 3850, 0);
+    ok = ok && b.link(uz, "z", cD, "value") && b.link(delta, "result", cD, "reference") && b.link(rz, "z", cR, "value") && b.link(rRef, "result", cR, "reference") &&
+         b.link(forces, "m_max", cM, "value") && b.link(mRef, "result", cM, "reference");
+    const int all = b.node("logic.and", 4100, 300), all3 = b.node("logic.and", 4100, 420);
+    ok = ok && b.link(cD, "passed", all, "a") && b.link(cR, "passed", all, "b") && b.link(all, "result", all3, "a") && b.link(cM, "passed", all3, "b");
+    const int verdict = b.node("text.concat", 4350, 300);
+    b.value(verdict, "a", std::string("Expérience conforme à la référence (flèche, réaction, moment) : "));
+    const int print = b.node("debug.print", 4100, 0);
+    ok = ok && b.link(all3, "result", verdict, "b") && b.link(verdict, "result", print, "value");
+
+    return ok && b.chain({ start, nA, nC, nB, b1, b2, s1, s2, supA, supB, lc, load, run, bar, disp, reac, forces, cD, cR, cM, print });
+}
 } // namespace
 
 bool build(const std::string& id, Graph& graph)
@@ -137,6 +230,7 @@ bool build(const std::string& id, Graph& graph)
     if (id == "parametric-portal") return buildPortal(graph);
     if (id == "node-row") return buildNodeRow(graph);
     if (id == "validation-bench") return buildBench(graph);
+    if (id == "simply-supported-experiment") return buildExperiment(graph);
     return false;
 }
 
