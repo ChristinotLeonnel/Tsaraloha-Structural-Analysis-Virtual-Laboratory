@@ -3,6 +3,8 @@
 #include "LabUI/LabStartPanel.h"
 #include "LabUI/SolverLabPage.h"
 #include "LabUI/ValidationPage.h"
+#include "LabUI/ExperimentsPage.h"
+#include "Research/Experiments/ExperimentJournal.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
@@ -115,6 +117,33 @@ LabMainWindow::LabMainWindow(QWidget* parent)
     auto& analysis = m_session->analysis();
     connect(&analysis, &TSA::Analysis::AnalysisController::resultsChanged, this, &LabMainWindow::onResultsChanged);
     connect(&analysis, &TSA::Analysis::AnalysisController::resultsBecameStale, this, &LabMainWindow::onResultsBecameStale);
+    // Journal d'expériences : chaque calcul terminé (interface, console, Blueprint, MCP) est enregistré avec le contexte
+    // réellement calculé, le modèle figé, le moteur et sa version, les avertissements et un résumé des résultats.
+    connect(&analysis, &TSA::Analysis::AnalysisController::runCompleted, this,
+            [this](const TSA::Analysis::AnalysisContext& context, bool success, const QString& message) {
+                auto& a = m_session->analysis();
+                const auto prepared = a.prepare(context);   // avertissements de validation du calcul
+                const auto results = a.results();
+                const QString project = m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString();
+                QString error;
+                TSALab::Research::ExperimentJournal journal(TSALab::Research::ExperimentJournal::directoryForProject(project));
+                const auto rec = journal.recordAnalysis(m_session->model(), &m_session->grids(), context, success, message,
+                                                        success ? results.get() : nullptr, a.registry(), project, &prepared, &error);
+                if (!error.isEmpty()) log(tr("Journal d'expériences : %1").arg(error), QStringLiteral("WARN"));
+                else log(tr("Expérience enregistrée : %1 (%2)").arg(rec.title, rec.status));
+                m_experiments->setDirectory(journal.directory());
+            });
+    connect(m_validation, &ValidationPage::finished, this, [this](const TSA::Validation::BenchmarkReport& report) {
+        const QString project = m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString();
+        TSALab::Research::ExperimentJournal journal(TSALab::Research::ExperimentJournal::directoryForProject(project));
+        QString error;
+        const auto rec = journal.recordValidation(report, &error);
+        log(error.isEmpty() ? tr("Validation enregistrée dans le journal : %1 (%2)").arg(rec.title, rec.status) : tr("Journal d'expériences : %1").arg(error),
+            error.isEmpty() ? QStringLiteral("SYS") : QStringLiteral("WARN"));
+        m_experiments->setDirectory(journal.directory());
+    });
+    connect(m_validation, &ValidationPage::message, this, [this](const QString& text, const QString& type) { log(text, type); });
+    connect(m_experiments, &ExperimentsPage::message, this, [this](const QString& text, const QString& type) { log(text, type); });
     connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::logMessage, this,
             [this](const QString& text, const QString& type) { log(text, type); });
     connect(m_analysisPanel, &TSA::UI::AnalysisManagerPanel::settingsChanged, this, &LabMainWindow::updateTitle);
@@ -191,6 +220,10 @@ void LabMainWindow::createWorkspaces()
     // Validation : banc de validation partagé avec TSA (cas de référence, écarts à la solution analytique, rapports)
     m_validation = new ValidationPage(m_workspaces);
     m_workspaces->addTab(m_validation, QIcon(":/icons/analysis_run.svg"), tr("Validation"));
+
+    // Expériences : journal des calculs et des validations du projet (traçabilité, rejeu)
+    m_experiments = new ExperimentsPage(m_workspaces);
+    m_workspaces->addTab(m_experiments, QIcon(":/icons/results_force.svg"), tr("Expériences"));
 
     setCentralWidget(m_workspaces);
 }
@@ -673,6 +706,7 @@ bool LabMainWindow::saveTo(const QString& path)
         return false;
     }
     TSA::Project::RecentProjects().touch(path);
+    m_experiments->setDirectory(TSALab::Research::ExperimentJournal::directoryForProject(path));
     updateTitle();
     log(tr("Projet enregistré : %1").arg(QDir::toNativeSeparators(path)));
     return true;
@@ -707,6 +741,8 @@ void LabMainWindow::afterProjectLoaded()
                                                                : tr("Nouveau modèle") + TSA::Product::projectExtension());
     m_tree->refreshAll();
     m_properties->clearProperties();
+    m_experiments->setDirectory(TSALab::Research::ExperimentJournal::directoryForProject(
+        m_session->project().hasFilePath() ? m_session->project().currentFilePath() : QString()));
     updateTitle();
     updateHistoryActions();
 }

@@ -67,6 +67,8 @@ add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Solver/SolverExperiment.cpp
     ${LAB_DIR}/Research/Validation/ValidationRunner.h
     ${LAB_DIR}/Research/Validation/ValidationRunner.cpp
+    ${LAB_DIR}/Research/Experiments/ExperimentJournal.h
+    ${LAB_DIR}/Research/Experiments/ExperimentJournal.cpp
 )
 tsa_apply_common_settings(TSALab_Research ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab_Research REUSE_FROM TSALab_Model)
@@ -87,6 +89,8 @@ add_executable(TSALab
     ${LAB_DIR}/LabUI/SolverLabPage.cpp
     ${LAB_DIR}/LabUI/ValidationPage.h
     ${LAB_DIR}/LabUI/ValidationPage.cpp
+    ${LAB_DIR}/LabUI/ExperimentsPage.h
+    ${LAB_DIR}/LabUI/ExperimentsPage.cpp
     ${TSA_ROOT_DIR}/resources/resources.qrc
     ${TSA_ROOT_DIR}/resources/templates.qrc
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/lab.qrc
