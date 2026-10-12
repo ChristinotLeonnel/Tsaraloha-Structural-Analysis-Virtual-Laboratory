@@ -41,8 +41,9 @@ modèle) : 0 violation.
 | `product/` | identité : nom, version, extension `.tsalab`, signature, réglages, CLSID de l'extension Explorateur | toutes |
 | `lab/Research/Examples` | modèles et Blueprints d'exemple à solution analytique connue | `TSALab_Research` |
 | `lab/Research/Solver` | SOLVER LAB : problème `K·U = F` d'un calcul → solveurs instrumentés de `tsalab_science` | `TSALab_Research` |
-| `lab/Research/Validation` | exécution du banc de validation partagé avec TSA | `TSALab_Research` |
-| `lab/Research/Experiments` | journal d'expériences : traçabilité et rejeu | `TSALab_Research` |
+| `lab/Research/Validation` | exécution du banc de validation partagé avec TSA ; étude de convergence en maillage (`MeshConvergence`) | `TSALab_Research` |
+| `lab/Research/Reference` | références analytiques appliquées au modèle de l'utilisateur, hypothèses vérifiées (`AnalyticalReference`) | `TSALab_Research` |
+| `lab/Research/Experiments` | journal d'expériences : traçabilité, référence, rejeu | `TSALab_Research` |
 | `lab/LabUI` | pages Accueil, SOLVER LAB, Validation, Expériences | exécutable |
 | `lab/LabApp` | fenêtre et câblage des espaces | exécutable |
 | `science/` | numerics, solveurs plans, MetDeDeplacement, benchmarks plans | `tsalab_science` |
@@ -57,18 +58,45 @@ La logique scientifique est toujours séparée de l'interface (`Research`, `scie
 | `AnalysisController::runCompleted` | fin de tout calcul (tâche de fond ou synchrone) avec le contexte calculé | journal d'expériences |
 | `Validation/BenchmarkSuite` | banc de validation (cas JSON, références analytiques ou externes, rapports) | TSA (`TSA_Benchmark`), TSALab (espace Validation) |
 | `Analysis/Engine/AnalysisEngine` | interface des moteurs de calcul et de leurs capacités | voir `SOLVER_API.md` |
+| `Analysis/ResultsExport` | exports des données d'analyse, dont les vecteurs F/U et les transformations local / global | dock « Données d'analyse » (TSA et TSALab) |
+| `Validation/BenchmarkSuite` : `CheckOutcome::convergence` | série de convergence en maillage structurée | espace Validation, rapport JSON |
+| `Automation/CommandRegistry` | commandes de propriétés, de lecture d'efforts et de comparaison | console, Blueprint, MCP (TSA et TSALab) |
 
 ## 4. Séparation des données
 
 | Nature | Où |
 | :--- | :--- |
 | modèle physique et analytique | `TSA::Model::Model`, `BimModel` (identifiants stables, liens physique ↔ analytique) |
-| modèle de maillage | `FeMesh` (TSA) ; pas encore exposé dans l'interface de TSALab |
+| modèle de maillage | `FeMesh` (TSA) : généré par Gmsh pour le calcul des coques, y compris depuis TSALab (banc FEA) ; pas d'interface de maillage dans TSALab (voir `SYNC_TSA_TSALAB.md`) |
 | données du solveur | `AnalysisModel`, scripts et fichiers du moteur (OpenSees) |
 | résultats | `ResultsModel`, indexé par identifiants TSA ; jamais enregistré dans le projet |
+| références analytiques | `ReferenceComparison`, enregistrée dans l'expérience ; jamais dans le projet |
 | traçabilité | journal d'expériences (`<projet>.experiments/`), à côté du projet |
 
 ## 5. Compatibilité des fichiers
 
 TSALab lit les projets TSA (`.tsa`, jamais réécrits) et enregistre au format `.tsalab` (même structure, signature
 propre). Les profils d'affichage et le journal d'expériences ne modifient pas le format des projets.
+
+## 6. Programmation visuelle : les nœuds du laboratoire
+
+Il n'y a pas d'éditeur propre au laboratoire. Les nœuds sont ceux de `TSA::Blueprint::NodeLibrary` :
+- les nœuds standard (paramètres, mathématiques, logique, flux) ;
+- **un nœud par commande du registre central**, généré à partir de la commande (broches typées, unités). Le test 193
+  de TSA vérifie que chaque commande est un nœud.
+
+Ajouter une commande, c'est donc ajouter un nœud, qui est aussi disponible dans la console et le serveur MCP.
+
+| Nœud demandé | Nœud réel | État |
+| :--- | :--- | :--- |
+| charger un modèle | — | **manque** : recharger un projet dans la session pendant l'exécution d'un graphe invaliderait les vues ouvertes ; on ouvre le projet, puis on exécute le graphe |
+| sélectionner | — | **manque** : la sélection appartient à la couche graphique ; les nœuds désignent les objets par identifiant (sorties `id` des nœuds de création) |
+| affecter des propriétés | `cmd.model.set_section`, `cmd.model.set_support` | fait |
+| appliquer des charges | `cmd.loads.create_case`, `cmd.loads.add_nodal`, `cmd.loads.add_uniform` | fait |
+| mailler | — | **manque** : le maillage interactif est dans la fenêtre de TSA ; le maillage des coques est fait au calcul |
+| lancer une analyse | `cmd.analysis.run` (moteur, axe, système, poids propre) | fait |
+| extraire des résultats | `cmd.results.summary`, `node_displacement`, `node_reaction`, `member_forces`, `cmd.query.bar` | fait |
+| comparer des valeurs | `cmd.compare.values` (tolérance mixte ; écart relatif absent si réf. ≈ 0) ; `math.compare` | fait |
+| exporter un rapport | `science.validation_bench` (rapport du banc dans le journal) | **partiel** : pas de rapport d'expérience exporté par un nœud |
+
+Exemple complet : Blueprint « Expérience : poutre bi-appuyée » (`lab/Research/Examples/BlueprintExamples.cpp`, test L6).

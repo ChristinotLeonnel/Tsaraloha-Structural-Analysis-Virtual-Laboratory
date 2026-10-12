@@ -33,11 +33,33 @@ L'interface (types d'analyse proposés, onglets de résultats) et la validation 
 capacités. Aucun code ne teste l'identité d'un moteur. Une option qu'aucun moteur ne déclare n'est pas proposée.
 
 Moteurs intégrés au 12/10/2026 :
+- capacités lues dans `capabilities()` (`OpenSeesEngine.cpp`, `Custom2DEngine.cpp`) ;
+- disponibilité des matrices constatée par les tests L7, L11 et L12.
 
-| Moteur | Version lue | Dim. | Éléments | Analyses |
-| :--- | :--- | :--- | :--- | :--- |
-| OpenSees (processus externe) | 3.8.0 | 3D | barres, treillis, câbles, coques (maillées), ressorts | statique, non linéaire, modale |
-| Custom2D (MetDeDeplacement, `tsalab_science`) | 2.0.0 | 2D | barres | statique |
+| | OpenSees (processus externe) | Custom2D (MetDeDeplacement, `tsalab_science`) |
+| :--- | :--- | :--- |
+| Version lue | 3.8.0 | 2.0.0 |
+| Dimension | 3D (6 DDL par nœud) | 2D (plan du modèle ou axe de grille) |
+| Barres fléchies | `elasticBeamColumn`, Euler-Bernoulli | Euler-Bernoulli |
+| Treillis, ressorts | oui (`truss`, `zeroLength`) | selon le solveur branché (`Custom2D::Features`) |
+| Câbles | oui (`corotTruss` + précontrainte) | non |
+| Coques | oui, maillées par Gmsh (`ShellMITC4`, `ShellDKGT`) | non : refus |
+| Éléments non pris en charge | exclus, avec un avertissement explicite | refus du calcul |
+| Analyses | statique linéaire, statique non linéaire, modale | statique linéaire |
+| Déplacements, réactions, efforts | oui | oui |
+| Numérotation des DDL, K globale | en extraction avancée (`extractionLevel = Advanced`) ; K plafonnée en nombre de DDL | avec l'option « Exporter le système K·U = F » |
+| Vecteur F (second membre) | **non exporté** | avec la même option |
+| Vecteur U | déduit des déplacements nodaux (signalé comme tel dans l'export) | exporté par le moteur |
+| Matrices élémentaires (k_basic, k_local, K_global) et rotation local → global | en extraction avancée | **non exportées** : l'export des transformations est refusé, avec la raison |
+
+**Fonctions non disponibles** (aucun moteur ne les déclare, donc absentes de l'interface) :
+- flambement linéaire ;
+- dynamique temporelle, analyse spectrale, pushover ;
+- thermique ;
+- éléments volumiques ;
+- déformation d'effort tranchant des barres (Timoshenko).
+
+La comparaison d'une barre courte à une référence avec cisaillement est donc hors domaine pour les deux moteurs.
 
 ## 3. Ajouter un moteur ou un solveur expérimental
 
@@ -56,7 +78,25 @@ processus** de l'application, sur action explicite de l'utilisateur ; rien ne pr
 fiable. OpenSees, lui, s'exécute dans un processus séparé. La feuille de route prévoit d'isoler les extensions
 (processus séparé ou extensions signées) avant d'en encourager l'usage (`LABORATORY_ROADMAP.md`).
 
-## 4. Solveurs instrumentés (SOLVER LAB)
+## 4. Laboratoire matriciel
+
+Les matrices sont celles **exportées par le moteur**, jamais recalculées par TSALab. Elles sont dans le dock « Données
+d'analyse » (menu Analyse) et s'exportent ainsi :
+
+| Données | Export | Si le moteur ne les fournit pas |
+| :--- | :--- | :--- |
+| numérotation des DDL | CSV, JSON | refus, avec la raison |
+| K globale (format COO) | CSV, JSON | refus, avec la raison |
+| vecteurs F et U par équation | CSV `equation,node,dof,F,U,U_source` | F : colonne vide, signalée en en-tête ; U déduit des déplacements, provenance « déplacements nodaux » |
+| matrices élémentaires | TXT, JSON | refus, avec la raison |
+| transformations local / global | CSV `element,class,nodeI,nodeJ,length,x_X…z_Z` | refus, avec la raison ; éléments manquants listés en fin de fichier |
+
+Le test L12 vérifie :
+- K·U = F à partir des seules données exportées par Custom2D (résidu ≤ 1e-9·|F|) ;
+- l'export des transformations des deux barres par OpenSees en extraction avancée ;
+- le refus de chaque donnée absente.
+
+## 5. Solveurs instrumentés (SOLVER LAB)
 
 `tsalab::numerics` (dans `science/`) fournit Gauss LU, Cholesky et gradient conjugué instrumentés : itérations,
 résidus, pivots (détection de mécanisme), conditionnement. SOLVER LAB rejoue avec eux le système `K·U = F` exporté

@@ -269,7 +269,7 @@ bool runSuite_Lab(int& passed)
         QTemporaryDir tmp;
         {
             QFile f(tmp.filePath("BAD.json"));
-            f.open(QIODevice::WriteOnly);
+            TEST_CHECK(f.open(QIODevice::WriteOnly), "fichier d'essai ouvert en écriture");
             f.write(R"({"format":"tsa.benchmark/1","id":"BAD","title":"Cas invalide","checks":[{"quantity":"node:1:quoi","formula":"1/"}]})");
         }
         const auto bad = loadCases(tmp.filePath("BAD.json"));
@@ -298,7 +298,7 @@ bool runSuite_Lab(int& passed)
         // Références externes : valeur fausse détectée ; référence nulle → écart relatif non défini, tolérance absolue
         {
             QFile f(tmp.filePath("ref.csv"));
-            f.open(QIODevice::WriteOnly);
+            TEST_CHECK(f.open(QIODevice::WriteOnly), "fichier d'essai ouvert en écriture");
             f.write("case,quantity,value,unit,source,rel_tol,abs_tol\n"
                     "RDM-01,node:2:ux,1.0,m,logiciel fictif (essai d'erreur),0.01,0\n"
                     "RDM-01,node:2:uz,0,m,symétrie (référence nulle),0,1e-9\n");
@@ -362,7 +362,7 @@ bool runSuite_Lab(int& passed)
         // Copie figée modifiée : rejeu refusé (empreinte)
         {
             QFile f(QDir(rec.folder).filePath(rec.modelSnapshot));
-            f.open(QIODevice::Append);
+            TEST_CHECK(f.open(QIODevice::Append), "fichier d'essai ouvert en écriture");
             f.write("x");
         }
         const auto tampered = ExperimentJournal::reproduce(list[0]);
@@ -385,7 +385,7 @@ bool runSuite_Lab(int& passed)
         QDir(journal.directory()).mkpath("corrompu");
         {
             QFile f(QDir(journal.directory()).filePath("corrompu/record.json"));
-            f.open(QIODevice::WriteOnly);
+            TEST_CHECK(f.open(QIODevice::WriteOnly), "fichier d'essai ouvert en écriture");
             f.write("{pas du json");
         }
         TEST_CHECK(journal.records().size() == 3, "Test L10: enregistrement illisible ignoré (" << journal.records().size() << " lus)");

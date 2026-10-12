@@ -66,10 +66,17 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
     conditionnement spectral, courbe de convergence ;
   * **Validation** — banc de validation partagé avec TSA (27 cas, 144 vérifications) : cas de référence calculés par la
     chaîne réelle, écarts absolu et relatif à la solution analytique ou à des résultats externes, rapports md/csv/json ;
+    **étude de convergence en maillage** (écart par maillage, ordre observé, extrapolation de Richardson, export CSV) ;
   * **Expériences** — journal de chaque calcul et de chaque validation (versions, moteur, modèle figé et son empreinte,
-    hypothèses, unités, statut, avertissements, résultats et provenance) et **rejeu** avec comparaison des résultats.
+    hypothèses, unités, statut, avertissements, résultats, provenance et **référence analytique**) et **rejeu** avec
+    comparaison des résultats ; journal d'un autre projet, reprise du modèle figé d'une expérience.
+* **Première expérience de référence** : poutre bi-appuyée avec force centrale. La référence d'Euler-Bernoulli est
+  appliquée au modèle de l'utilisateur après vérification de ses hypothèses : réactions, flèche, moment et effort
+  tranchant comparés. La même expérience existe entièrement en nœuds Blueprint.
+* **Laboratoire matriciel** (dock « Données d'analyse ») : DDL, K globale, matrices élémentaires, vecteurs F et U,
+  transformations local / global, exports CSV des seules données fournies par le moteur.
 * **Affichage** : échelles des annotations et des charges, profils d'affichage, diagnostic (composant partagé avec TSA).
-* **Suite de tests `lab`** (L4–L10) et tests du cœur scientifique (S1–S6), en plus des tests de la base commune
+* **Suite de tests `lab`** (L4–L13) et tests du cœur scientifique (S1–S6), en plus des tests de la base commune
   (dépôt TSA). Documentation du laboratoire : [`docs/`](docs/).
 
 ---
@@ -292,6 +299,8 @@ TSALab a sa propre fenêtre (`lab/LabApp/LabMainWindow`), distincte de celle de 
 menus **Fichier, Exemples, Édition, Affichage, Modèle, Blueprint, Analyse, IA, Aide**, barre d'outils de modélisation
 (Sélection, Nœud, Poutre, Poteau, Barre, Calculer) et onglets d'espaces **Accueil, Modèle, Blueprint, Analyse,
 Résultats, Recherche, Validation, Expériences**.
+Documentation : architecture, API des solveurs, validation, feuille de route et historique des synchronisations avec
+TSA (`docs/SYNC_TSA_TSALAB.md`).
 
 Panneaux : explorateur du projet, propriétés, résultats structuraux 3D, console (commandes du registre central),
 données d'analyse (K, F, U), assistant IA. Un seul projet par fenêtre (voir `docs/LABORATORY_ROADMAP.md`).
@@ -302,9 +311,9 @@ données d'analyse (K, F, U), assistant IA. Un seul projet par fenêtre (voir `d
 
 | Exécutable | Contenu | État au 12/10/2026 |
 | :--- | :--- | :--- |
-| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints, L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences | 7 / 7 |
+| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints (dont l'expérience en nœuds), L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences, L11 première expérience complète, L12 laboratoire matriciel, L13 convergence en maillage | 10 / 10 |
 | `tsalab_science_tests` | S1–S6 : algèbre linéaire, solveurs plans, MetDeDeplacement, benchmarks plans, OpenSees ≈ MetDeDeplacement | 6 / 6 |
-| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation… | 388 tests dans TSA |
+| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation, commandes… | 389 tests dans TSA |
 
 ```powershell
 cmake --build --preset ninja-debug
