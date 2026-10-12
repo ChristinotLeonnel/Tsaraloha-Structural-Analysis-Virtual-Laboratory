@@ -36,7 +36,7 @@ arrive pas : TSALab a sa propre fenêtre `LabMainWindow`, avec une session de pr
 | `TSALab_TestSuite` | 5 / 5 (L4 à L8) |
 | `tsalab_science_tests` | 6 / 6 (S1 à S6 ; 7 benchmarks plans, OpenSees 3.8.0 ≈ MetDeDeplacement) |
 | Lancement réel de `TSALab.exe` | fenêtre ouverte, 6 espaces et 6 exemples, fermeture propre ; console attachée en Debug (voulue, comme TSA) |
-| `check_layers.py` | **1 violation** : `NDC/NDCProjectNote.cpp` (modèle) incluait `Geometry/DiagramGeometry.h` (graphique) |
+| `check_layers.py` | **1 violation** : `NDC/NDCProjectNote.cpp` (modèle) incluait `Geometry/DiagramGeometry.h` (graphique) — corrigée le 12/10 (0 violation) |
 | TSA, suite complète | 387 / 387 en Debug et en Release (12/10) |
 
 L'en-tête du README de TSALab annonce « 212 tests ». Il s'agit des tests communs de TSA à une date antérieure ; ils
@@ -63,15 +63,15 @@ s'exécute pour TSALab.
 | Torsion, gauchissement, moments répartis | testée (suite `torsion`) | intégrée (moteur, résultats) | modèle et moteur partagés |
 | Dynamique temporelle, spectrale, pushover, flambement, thermique | **absente** | absente | aucun moteur ne les déclare (`AnalysisCapabilities`) |
 | Déformées, diagrammes, échelles séparées | testée | intégrée (dock Résultats, vue) | `ResultsVisualManager` partagé |
-| Menus d'échelles (annotations, charges), profils d'affichage, diagnostic | testée | **absente** | menus construits dans `MainWindow_Actions.cpp` |
+| Menus d'échelles (annotations, charges), profils d'affichage, diagnostic | testée | **intégrée le 12/10** (composant partagé `UI/Display/DisplayMenus`, test 388, menu vérifié dans TSALab réel) | auparavant construits dans `MainWindow_Actions.cpp` |
 | Note de calcul | testée | intégrée (onglet Résultats / note) | NDC partagée |
 | Copier-coller structurel | testée | absente de l'interface (classe partagée présente) | câblage dans la fenêtre de TSA |
 | Onglets multi-documents | testée | **absente** : une session par fenêtre | `AppShell` propre à TSA |
-| Banc de validation (27 cas, 144 vérifications) | testée (suite `benchmarks`, outil `TSA_Benchmark`) | **absente** de l'interface (code partagé présent) | aucun espace de validation dans TSALab |
+| Banc de validation (27 cas, 144 vérifications) | testée (suite `benchmarks`, outil `TSA_Benchmark`) | **intégrée, testée le 12/10** (espace Validation, test L9 ; 144 vérifications réussies dans TSALab réel) | — |
 | Serveur MCP, identifiant de document | testée | intégrée (serveur propre, canal `tsaraloha-tsalab`) | `AutomationServer` partagé |
 | Blueprint (programmation visuelle), débogueur, plugins | testée | intégrée, testée (L6, L8) | éditeur partagé |
 | SOLVER LAB (K·U = F instrumenté) | — | intégrée, testée (L7) | propre à TSALab |
-| Journal d'expériences, traçabilité, reproduction | absente | **absente** | — |
+| Journal d'expériences, traçabilité, reproduction | absente | **créée, testée le 12/10** (espace Expériences, test L10 ; rejeu identique dans TSALab réel) | propre à TSALab |
 | Comparaison de solveurs sur un même problème | banc (référence analytique vs un moteur) | partielle : S6 compare OpenSees et MetDeDeplacement en 2D, sans interface | — |
 
 ## 5. Interface des solveurs
@@ -107,4 +107,4 @@ Capacités déclarées aujourd'hui :
 | 7 | Multi-documents ou multi-expériences dans TSALab | — |
 | 8 | Nouveaux types d'analyse (flambement linéaire, temporel, spectral) : capacités, moteur, validation | — |
 
-Les étapes 1 à 4 sont traitées dans cette mission ; les suivantes sont décrites dans `LABORATORY_ROADMAP.md`.
+Les étapes 1 à 4 sont faites (preuves dans `LABORATORY_ROADMAP.md`) ; les suivantes y sont planifiées.
