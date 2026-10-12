@@ -263,7 +263,7 @@ bool runSuite_Lab(int& passed)
         const auto cases = loadCases(dir);
         int valid = 0;
         for (const auto& c : cases) valid += c.valid();
-        TEST_CHECK(QDir(dir).exists() && cases.size() == 27 && valid == 27, "Test L9: 27 cas du banc partagé chargés et valides (" << cases.size() << ", " << valid << ")");
+        TEST_CHECK(QDir(dir).exists() && cases.size() == 28 && valid == 28, "Test L9: 28 cas du banc partagé chargés et valides (" << cases.size() << ", " << valid << ")");
 
         // Cas invalide : erreurs listées, pas d'exécution ni de plantage
         QTemporaryDir tmp;
@@ -610,6 +610,24 @@ bool runSuite_Lab(int& passed)
             bool meshes = true;
             for (const auto& r : fea.rows) meshes = meshes && r.available && !r.mesh.isEmpty();
             TEST_CHECK(fea.applicable && meshes && uz->passed && fea.rows.back().value == uz->value, "Test L13: FEA-01 — 3 maillages générés et calculés, vérification sur le plus fin réussie");
+        }
+        // FEA-07 : MITC4 avec appui dur contre la référence de Mindlin — convergence d'ordre 2, Richardson sur la référence
+        std::vector<TSA::Validation::BenchmarkCase> hard;
+        for (const auto& c : loadCases(defaultBenchmarkDirectory()))
+            if (c.benchmark.id == "FEA-07") hard.push_back(c.benchmark);
+        const auto rep7 = runValidation(hard, {});
+        const CheckOutcome* uz7 = nullptr;
+        for (const auto& c : rep7.cases)
+            for (const auto& ck : c.checks)
+                if (ck.quantity == "surface:uz:absmax") uz7 = &ck;
+        TEST_CHECK(uz7 && uz7->convergence.size() == 4, "Test L13: FEA-07 — série de 4 maillages");
+        if (uz7)
+        {
+            const auto st7 = analyseMeshConvergence(*uz7);
+            std::cout << "  FEA-07 : ordre observé " << st7.observedOrder << ", écart du maillage le plus fin " << st7.rows.back().relErrorToReference * 100
+                      << " %, extrapolé " << st7.extrapolatedRelError * 100 << " %" << std::endl;
+            TEST_CHECK(uz7->passed && st7.errorDecreasing && std::abs(st7.observedOrder - 2.0) < 0.2 && st7.extrapolatedRelError < 1e-4,
+                       "Test L13: FEA-07 — écart décroissant, ordre observé ≈ 2, extrapolation de Richardson sur la référence de Mindlin");
         }
         std::cout << "[PASS] Test L13: convergence en maillage (série du banc, ordre observé, Richardson, chaîne Gmsh → OpenSees)" << std::endl;
         ++passed;

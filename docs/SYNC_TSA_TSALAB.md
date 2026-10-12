@@ -94,6 +94,13 @@ utilisait une taille inexistante échoue désormais, au lieu de calculer avec un
 Pendant les essais d'interface, les réglages de l'utilisateur ont été sauvegardés puis restaurés à l'identique : 4 clés
 du registre et `shortcut.txt`. Les fichiers créés par les essais ont été supprimés.
 
+## 12/10/2026 — suite (après fusion locale)
+
+Fusions locales sans poussée : TSA `main` `df8e0d8`, TSALab `main` `ea595e1`. Nouvelles branches, à fusionner dans le
+même ordre (TSA d'abord) :
+- TSA `feature/fea-mindlin` : cas FEA-07, annotation de FEA-01, `BENCHMARKS.md` ;
+- TSALab `feature/fea-mindlin` : tests L9 (28 cas) et L13 (FEA-07), documentation.
+
 ## Incompatibilités et limites connues
 
 | Fonction de TSA | Pourquoi elle n'est pas dans TSALab | Condition de reprise |

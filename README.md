@@ -64,7 +64,7 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
   * **Recherche (SOLVER LAB)** — rejoue la résolution `K·U = F` du dernier calcul avec des solveurs instrumentés
     (Gauss LU, Cholesky, gradient conjugué) : itérations, résidus, pivots (détection de mécanisme), écart au moteur,
     conditionnement spectral, courbe de convergence ;
-  * **Validation** — banc de validation partagé avec TSA (27 cas, 144 vérifications) : cas de référence calculés par la
+  * **Validation** — banc de validation partagé avec TSA (28 cas, 146 vérifications) : cas de référence calculés par la
     chaîne réelle, écarts absolu et relatif à la solution analytique ou à des résultats externes, rapports md/csv/json ;
     **étude de convergence en maillage** (écart par maillage, ordre observé, extrapolation de Richardson, export CSV) ;
   * **Expériences** — journal de chaque calcul et de chaque validation (versions, moteur, modèle figé et son empreinte,

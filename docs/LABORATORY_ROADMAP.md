@@ -19,6 +19,7 @@ quand c'est pertinent, essai dans l'application réelle. Le détail de départ e
 | Convergence en maillage : série structurée du banc, ordre observé, Richardson, panneau et export CSV | test 367 (TSA), test L13 ; espace Validation de TSALab réel (FEA-01) |
 | Nœuds du laboratoire : section, lecture de barre, réaction, efforts, comparaison ; expérience entièrement en nœuds | test 389 (TSA), test L6 |
 | Profil hors catalogue refusé (n'est plus remplacé en silence par l'IPE 100) | test 389 (TSA), test L6 |
+| Cas FEA-07 : MITC4 contre la référence de Mindlin (appui dur), ordre 2 observé ; écart de FEA-01 expliqué (appui mou) | test 367 (TSA, 146 vérifications), test L13 |
 
 Les briques déjà présentes avant cette mission restent en place, et vérifiées par L4 à L8 et S1 à S6 :
 - Blueprint (programmation visuelle typée, débogueur) ;
@@ -35,7 +36,6 @@ Les briques déjà présentes avant cette mission restent en place, et vérifié
 | P1 | Maillage dans TSALab | sortir `MeshController` de la fenêtre de TSA vers la couche widgets, puis page Maillage : génération Gmsh, qualité, vue, études de convergence | refonte d'un composant de TSA : à faire avec ses tests (suites `mesh`, `meshview`, `surfaces`) |
 | P1 | Coques calculables depuis TSALab | transmettre le maillage au calcul (déjà fait dans TSA) | dépend du maillage |
 | P2 | Plusieurs projets ou expériences | onglets de sessions dans `LabMainWindow` (même principe que `AppShell` de TSA : une session par onglet, aucune donnée partagée) | `AutomationServer` : un seul serveur à l'écoute |
-| P1 | Cas de validation MITC4 contre une référence de Mindlin | FEA-01 montre que MITC4 converge vers une solution plus souple que la référence de Kirchhoff (écart croissant au raffinement) ; ajouter une référence de même théorie | référence publiée (Mindlin, plaque épaisse) |
 | P2 | Laboratoire matriciel, suite | page dédiée : matrices élémentaires et globale en tableau ou carte de couleurs, comparaison de deux calculs ; exporter les matrices élémentaires de Custom2D (aujourd'hui non exportées) | `Custom2D::Features` ; aucune matrice recalculée par TSALab |
 | P2 | Nœuds Blueprint, suite | enregistrer une expérience, exporter un rapport, tracer une courbe ; « charger un modèle » et « sélectionner » à concevoir (voir `ARCHITECTURE.md` § 6) | API du registre de commandes |
 | P2 | Rapports scientifiques | rapport d'expérience (démarche, hypothèses, équations, données, résultats, provenance) exporté depuis le journal | NDC existante pour la partie calcul |

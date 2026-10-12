@@ -51,13 +51,16 @@ Constats sur le banc actuel (OpenSees 3.8.0, test L13 et rapport du test 367 de 
 
 | Cas | Élément | Écart à la référence de Kirchhoff (h = 1 → 0,5 → 0,25 m) | Lecture |
 | :--- | :--- | :--- | :--- |
-| FEA-01 | `ShellMITC4` (Mindlin) | 0,27 % → 1,63 % → 2,65 % | l'écart **croît** quand on raffine : l'accord du maillage grossier est une compensation d'erreurs. MITC4 converge vers une solution plus souple que Kirchhoff (déformation d'effort tranchant, a/e = 30, hypothèse déjà écrite dans le cas). L'ordre apparent (0,40) et l'extrapolation (écart 5,9 %) ne sont pas fiables : le régime asymptotique n'est pas atteint. |
+| FEA-01 | `ShellMITC4` (Mindlin), appui « mou » (translations seules bloquées) | 0,27 % → 1,63 % → 2,65 % | l'écart **croît** quand on raffine : l'accord du maillage grossier est une compensation d'erreurs. Le cisaillement seul n'explique que 0,5 % (référence de Mindlin) ; le reste vient de la couche limite de l'appui mou, que le maillage résout de mieux en mieux. L'ordre apparent (0,40) et l'extrapolation (5,9 %) ne sont pas fiables. |
 | FEA-02 | `ShellDKGT` (Kirchhoff discret) | 2,1 % → 0,6 % → 0,08 % | convergence monotone vers la référence de même théorie |
 | FEA-03 | `ShellMITC4`, bande de coque | identique sur les trois maillages | solution exacte dès le maillage grossier ; ordre non défini (variations nulles) |
+| FEA-07 | `ShellMITC4`, appui « dur » (rotation tangentielle bloquée), **référence de Mindlin** (h = 1 → 0,125 m) | 0,98 % → 0,24 % → 0,059 % → 0,015 % | ordre observé **2,01**, extrapolation de Richardson à 1,5e-6 de la référence : MITC4 converge vers la solution de Mindlin, avec l'ordre attendu |
 
-Les trois cas passent leur tolérance. FEA-01 passe parce que sa tolérance (5 %) couvre l'écart de théorie : il ne
-démontre donc pas la convergence de MITC4 vers la référence de Kirchhoff. Comparer MITC4 à une référence de Mindlin
-serait un meilleur cas de validation de cet élément (à ajouter au banc).
+Tous les cas passent leur tolérance. FEA-01 ne passe que grâce à sa tolérance de 5 % : il ne démontre pas la
+convergence de MITC4. FEA-07 la démontre. Référence de Mindlin pour une plaque polygonale simplement appuyée (appui dur) :
+w = α·q·a⁴/D + β·q·a²/(κ·G·e) (Wang, Lim, Reddy, Lee, 2001), avec α = 0,00406235 et β = 0,0736714 calculés par séries.
+**Leçon de modélisation** : pour une coque de Mindlin, bloquer seulement les translations d'un bord donne un appui « mou »
+plus souple que l'appui simple de la théorie des plaques minces.
 
 ## 2. Première expérience complète : poutre bi-appuyée, force centrale
 
