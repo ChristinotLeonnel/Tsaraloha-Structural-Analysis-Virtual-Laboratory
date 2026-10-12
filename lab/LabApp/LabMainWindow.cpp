@@ -2,6 +2,7 @@
 
 #include "LabUI/LabStartPanel.h"
 #include "LabUI/SolverLabPage.h"
+#include "LabUI/ValidationPage.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
 
@@ -186,6 +187,10 @@ void LabMainWindow::createWorkspaces()
     // Recherche : SOLVER LAB (résolution instrumentée de K·U = F du dernier calcul).
     m_solverLab = new SolverLabPage(m_workspaces);
     m_workspaces->addTab(m_solverLab, QIcon(":/icons/results_disp.svg"), tr("Recherche"));
+
+    // Validation : banc de validation partagé avec TSA (cas de référence, écarts à la solution analytique, rapports)
+    m_validation = new ValidationPage(m_workspaces);
+    m_workspaces->addTab(m_validation, QIcon(":/icons/analysis_run.svg"), tr("Validation"));
 
     setCentralWidget(m_workspaces);
 }

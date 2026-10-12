@@ -65,10 +65,14 @@ add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Examples/BlueprintExamples.cpp
     ${LAB_DIR}/Research/Solver/SolverExperiment.h
     ${LAB_DIR}/Research/Solver/SolverExperiment.cpp
+    ${LAB_DIR}/Research/Validation/ValidationRunner.h
+    ${LAB_DIR}/Research/Validation/ValidationRunner.cpp
 )
 tsa_apply_common_settings(TSALab_Research ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab_Research REUSE_FROM TSALab_Model)
 target_link_libraries(TSALab_Research PUBLIC TSALab_Model)
+# Cas du banc de validation partagé (poste de développement ; le paquet les livre dans validation/cases)
+target_compile_definitions(TSALab_Research PUBLIC TSALAB_TSA_BENCHMARKS="${TSA_ROOT_DIR}/tests/benchmarks")
 
 # =============================================================================
 # Application TSALab.exe
@@ -81,6 +85,8 @@ add_executable(TSALab
     ${LAB_DIR}/LabUI/LabStartPanel.cpp
     ${LAB_DIR}/LabUI/SolverLabPage.h
     ${LAB_DIR}/LabUI/SolverLabPage.cpp
+    ${LAB_DIR}/LabUI/ValidationPage.h
+    ${LAB_DIR}/LabUI/ValidationPage.cpp
     ${TSA_ROOT_DIR}/resources/resources.qrc
     ${TSA_ROOT_DIR}/resources/templates.qrc
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/lab.qrc

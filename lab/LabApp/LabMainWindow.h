@@ -62,6 +62,7 @@ namespace TSALab::UI
 
 class LabStartPanel;
 class SolverLabPage;
+class ValidationPage;
 
 class LabMainWindow : public QMainWindow
 {
@@ -119,6 +120,7 @@ private:
     SolverLabPage* m_solverLab = nullptr;
     TSA::UI::ResultsDockWidget* m_resultsDock = nullptr;
     TSA::UI::DisplayMenus* m_displayMenus = nullptr;   ///< échelles, profils, diagnostic (partagés avec TSA)
+    ValidationPage* m_validation = nullptr;            ///< espace Validation (banc partagé avec TSA)
     TSA::UI::AnalysisDataDock* m_dataDock = nullptr;
     TSA::AI::AIOrchestrator* m_ai = nullptr;
     TSA::Automation::AutomationServer* m_automation = nullptr;   ///< pont MCP (Claude Code), TSA/docs/MCP.md
