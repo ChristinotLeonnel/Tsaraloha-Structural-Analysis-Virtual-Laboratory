@@ -145,6 +145,21 @@ bool runSuite_Lab(int& passed)
             else if (ex.id == "validation-bench")
                 TEST_CHECK(!r.log.empty() && r.log.back().find("benchmark(s) validé(s)") != std::string::npos,
                            "Test L6: rapport du banc de validation dans le journal");
+            else if (ex.id == "simply-supported-experiment")
+            {
+                // Chaîne complète en nœuds : modèle, propriétés, calcul, extraction, comparaison
+                for (const auto& line : r.log) std::cout << "    " << line << std::endl;
+                int compared = 0;
+                for (const auto& line : r.log) compared += line.find("dans la tolérance") != std::string::npos;
+                TEST_CHECK(m.nodes().size() == 3 && m.beams().size() == 2 && m.beams().begin()->second.section().name == "IPE 300" && compared == 3 &&
+                               r.log.back().find("référence (flèche, réaction, moment) : vrai") != std::string::npos,
+                           "Test L6: expérience en nœuds — 3 comparaisons dans la tolérance (flèche, réaction, moment)");
+                const auto ref = TSALab::Research::simplySupportedCentralLoad(m, session.analysis().context(), session.analysis().results().get());
+                TEST_CHECK(ref.applicable && ref.passed(), "Test L6: le modèle produit par le graphe est reconnu par la référence analytique du laboratoire");
+                TSA::Project::ProjectSession other;
+                const auto r2 = TSA::Blueprint::Runner(lib, back, &other).run({ { "section", std::string("IPE 999") } });
+                TEST_CHECK(!r2.ok && r2.message.find("catalogue") != std::string::npos, "Test L6: section hors catalogue — exécution arrêtée, raison donnée");
+            }
         }
         std::cout << "[PASS] Test L6: " << BlueprintExamples::catalog().size() << " Blueprints d'exemple exécutés" << std::endl;
         ++passed;
