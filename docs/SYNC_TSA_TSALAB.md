@@ -50,10 +50,10 @@ Les branches de chaque dépôt sont **chaînées** : chacune part de la précéd
 | :--- | :--- | :--- | :--- |
 | TSA | `feature/lab-matrices` | `5baf4ea` | export CSV des vecteurs F/U et des transformations local/global (`ResultsExport`, dock « Données d'analyse ») |
 | TSA | `feature/mesh-convergence` | `66bcfc2` | série de convergence structurée dans `CheckOutcome` et le rapport JSON du banc |
-| TSA | `feature/lab-nodes` | `e9648de`, `b1faddc` | commandes `model.set_section`, `query.bar`, `results.node_reaction`, `results.member_forces`, `compare.values`, option `self_weight` d'`analysis.run` ; profil hors catalogue refusé |
+| TSA | `feature/lab-nodes` | `e9648de`, `b1faddc`, `d607042`, `2af0e78` | commandes `model.set_section`, `query.bar`, `results.node_reaction`, `results.member_forces`, `compare.values`, option `self_weight` d'`analysis.run` ; profil hors catalogue refusé |
 | TSALab | `feature/experiences-matrices` | `7fd9372`, `5114d33` | première expérience complète (référence analytique, centre d'expériences), test du laboratoire matriciel |
 | TSALab | `feature/convergence-maillage` | `d0fa99d` | étude de convergence en maillage, panneau de l'espace Validation |
-| TSALab | `feature/noeuds-laboratoire` | `c9ec74c` | Blueprint « Expérience : poutre bi-appuyée » entièrement en nœuds |
+| TSALab | `feature/noeuds-laboratoire` | `c9ec74c`, docs | Blueprint « Expérience : poutre bi-appuyée » entièrement en nœuds ; documentation |
 
 **Ordre de fusion obligatoire** : TSA `feature/lab-nodes` (qui contient les deux autres) avant TSALab
 `feature/noeuds-laboratoire`. TSALab compilé contre TSA `main` actuel échoue : il utilise
@@ -79,6 +79,20 @@ Le travail propre à TSALab reste dans `lab/` :
 catalogue. Par exemple, « IPE 999 » recevait **en silence** les dimensions de l'IPE 100, sous le nom « IPE 999 ». Une
 telle taille est maintenant **refusée**, avec la liste des tailles disponibles. Un script ou un Blueprint qui
 utilisait une taille inexistante échoue désormais, au lieu de calculer avec une section fausse.
+
+### Résultats
+
+| Contrôle | Résultat |
+| :--- | :--- |
+| TSA Debug, suite complète | 389 / 389 (le test 262, surveillance de fichier avec un délai de 4 s, a échoué une fois sous charge, puis réussi 3 fois sur 3 seul et dans la suite complète suivante) |
+| TSALab Debug : `TSALab_TestSuite`, `tsalab_science_tests` | 10 / 10, 6 / 6 |
+| TSALab, préréglage `windows-x64-release` (Visual Studio 18 2026) : configuration et compilation | réussies, 0 erreur |
+| TSALab Release : `TSALab_TestSuite`, `tsalab_science_tests`, `ctest -C Release` | 10 / 10, 6 / 6, 1 / 1 |
+| `check_layers.py` | 0 violation |
+| TSALab réel | expérience de référence (calcul, déformée, réactions, réouverture) ; panneau de convergence (FEA-01) ; Blueprint de l'expérience exécuté en Release, avec la référence applicable et 5 vérifications réussies dans le journal |
+
+Pendant les essais d'interface, les réglages de l'utilisateur ont été sauvegardés puis restaurés à l'identique : 4 clés
+du registre et `shortcut.txt`. Les fichiers créés par les essais ont été supprimés.
 
 ## Incompatibilités et limites connues
 
