@@ -8,6 +8,11 @@
 #include "Research/Reference/AnalyticalReference.h"
 #include "Research/Examples/BlueprintExamples.h"
 #include "Research/Examples/ExampleModels.h"
+#include "Research/Examples/StructuralGraphs.h"
+#include "Research/Structural/ResultBoard.h"
+#include "Research/Structural/StructuralObjects.h"
+#include "LabUI/StructuralViewers.h"
+#include "UI/Blueprint/BlueprintObjectViewer.h"
 
 #include "AI/Core/AIOrchestrator.h"
 #include "Analysis/AnalysisController.h"
@@ -288,6 +293,18 @@ void LabMainWindow::createDocks()
     addDockWidget(Qt::RightDockWidgetArea, m_resultsDock);
     tabifyDockWidget(m_propertiesDock, m_resultsDock);
     m_propertiesDock->raise();
+
+    // Programmation structurelle (TSALab Blueprint) : résultats 2D publiés par le bloc « Visualiser »
+    m_frameDock = new QDockWidget(tr("Résultats 2D (Blueprint)"), this);
+    m_frameDock->setObjectName("LabFrame2DResults");
+    m_frameView = new Frame2DView(m_frameDock);
+    m_frameDock->setWidget(m_frameView);
+    m_frameDock->setMinimumWidth(280);   // comme le dock des propriétés : la fenêtre doit tenir sur un écran de 1366 px
+    addDockWidget(Qt::RightDockWidgetArea, m_frameDock);
+    tabifyDockWidget(m_resultsDock, m_frameDock);
+    m_propertiesDock->raise();
+    connect(&TSALab::Research::Structural::ResultBoard::instance(), &TSALab::Research::Structural::ResultBoard::published, this,
+            &LabMainWindow::showPublishedObjects, Qt::QueuedConnection);
     if (auto* rv = m_view->resultsVisual())
     {
         using RD = TSA::UI::ResultsDockWidget;
@@ -505,7 +522,7 @@ void LabMainWindow::createMenus()
     QMenu* panels = view->addMenu(tr("&Panneaux"));
     for (QDockWidget* d : { m_treeDock, m_propertiesDock, static_cast<QDockWidget*>(m_console),
                             static_cast<QDockWidget*>(m_resultsDock), static_cast<QDockWidget*>(m_dataDock),
-                            static_cast<QDockWidget*>(m_aiDock) })
+                            static_cast<QDockWidget*>(m_aiDock), m_frameDock })
         panels->addAction(d->toggleViewAction());
     view->addAction(tr("Disposition par défaut"), this, [this] { restoreState(m_defaultLayout); });
     view->addAction(tr("Thème clair / sombre"), this, [] { TSA::UI::ThemeManager::instance().toggleTheme(); });
@@ -574,6 +591,25 @@ void LabMainWindow::createMenus()
             if (!TSALab::Research::BlueprintExamples::build(id, g)) return;
             m_blueprint->setGraph(std::move(g));
             m_workspaces->setCurrentWidget(m_blueprint);
+        });
+        a->setToolTip(QString::fromStdString(ex.description));
+    }
+    // TSALab Blueprint — programmation structurelle : classe FrameElement2D, méthode des déplacements, solveur de l'étudiant…
+    QMenu* bpStructural = bp->addMenu(tr("Programmation structurelle"));
+    for (const auto& ex : TSALab::Research::StructuralGraphs::catalog())
+    {
+        const std::string id = ex.id;
+        QAction* a = bpStructural->addAction(QString::fromStdString(ex.title), this, [this, id] {
+            TSA::Blueprint::Graph g;
+            std::string error;
+            if (!TSALab::Research::StructuralGraphs::build(id, g, &error))
+            {
+                log(tr("Exemple de programmation structurelle non construit : %1").arg(QString::fromStdString(error)), QStringLiteral("ERROR"));
+                return;
+            }
+            m_blueprint->setGraph(std::move(g));
+            m_workspaces->setCurrentWidget(m_blueprint);
+            log(tr("Exemple ouvert : %1 (Exécuter pour le calculer ; F1 sur un bloc pour sa documentation).").arg(QString::fromStdString(m_blueprint->graph().name)));
         });
         a->setToolTip(QString::fromStdString(ex.description));
     }
@@ -710,6 +746,30 @@ bool LabMainWindow::openExample(const QString& exampleId)
         }
     }
     return openProjectFile(path);
+}
+
+void LabMainWindow::showPublishedObjects()
+{
+    namespace R = TSALab::Research::Structural;
+    for (const auto& item : R::ResultBoard::instance().take())
+    {
+        if (const auto* r = dynamic_cast<const R::ResultObject*>(item.object.get()))
+        {
+            m_frameView->setResult(r->value(), item.scale);
+            m_frameView->setTitle(item.title + QStringLiteral(" — ") + QString::fromStdString(r->value().title));
+            m_frameDock->show();
+            m_frameDock->raise();
+        }
+        else if (const auto* m = dynamic_cast<const R::ModelObject*>(item.object.get()))
+        {
+            m_frameView->setModel(m->value());
+            m_frameView->setTitle(item.title);
+            m_frameDock->show();
+            m_frameDock->raise();
+        }
+        else
+            TSA::UI::showObjectViewer(item.object, item.title, this);
+    }
 }
 
 bool LabMainWindow::save()

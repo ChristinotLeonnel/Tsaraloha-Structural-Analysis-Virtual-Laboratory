@@ -73,6 +73,24 @@ add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Experiments/ExperimentJournal.cpp
     ${LAB_DIR}/Research/Reference/AnalyticalReference.h
     ${LAB_DIR}/Research/Reference/AnalyticalReference.cpp
+    # TSALab Blueprint — programmation structurelle (blocs pré-codés, objets typés, graphes d'exemple)
+    ${LAB_DIR}/Research/Structural/StructuralObjects.h
+    ${LAB_DIR}/Research/Structural/StructuralObjects.cpp
+    ${LAB_DIR}/Research/Structural/StructuralModels.h
+    ${LAB_DIR}/Research/Structural/StructuralModels.cpp
+    ${LAB_DIR}/Research/Structural/NodeHelpers.h
+    ${LAB_DIR}/Research/Structural/NodeHelpers.cpp
+    ${LAB_DIR}/Research/Structural/ModelNodes.cpp
+    ${LAB_DIR}/Research/Structural/ElementNodes.cpp
+    ${LAB_DIR}/Research/Structural/AssemblyNodes.cpp
+    ${LAB_DIR}/Research/Structural/MatrixNodes.cpp
+    ${LAB_DIR}/Research/Structural/ControlNodes.cpp
+    ${LAB_DIR}/Research/Structural/ResultBoard.h
+    ${LAB_DIR}/Research/Structural/ResultBoard.cpp
+    ${LAB_DIR}/Research/Structural/StructuralLibrary.h
+    ${LAB_DIR}/Research/Structural/StructuralLibrary.cpp
+    ${LAB_DIR}/Research/Examples/StructuralGraphs.h
+    ${LAB_DIR}/Research/Examples/StructuralGraphs.cpp
 )
 tsa_apply_common_settings(TSALab_Research ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab_Research REUSE_FROM TSALab_Model)
@@ -95,6 +113,8 @@ add_executable(TSALab
     ${LAB_DIR}/LabUI/ValidationPage.cpp
     ${LAB_DIR}/LabUI/ExperimentsPage.h
     ${LAB_DIR}/LabUI/ExperimentsPage.cpp
+    ${LAB_DIR}/LabUI/StructuralViewers.h
+    ${LAB_DIR}/LabUI/StructuralViewers.cpp
     ${TSA_ROOT_DIR}/resources/resources.qrc
     ${TSA_ROOT_DIR}/resources/templates.qrc
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/lab.qrc
@@ -140,7 +160,7 @@ tsaraloha_add_package_target(TSALab "TSALab.exe;tsaraloha-mcp.exe;tsa3d-validate
 # =============================================================================
 if(TSA_BUILD_TESTS)
     enable_testing()
-    add_executable(TSALab_Tests ${LAB_DIR}/Tests/LabTests.cpp)
+    add_executable(TSALab_Tests ${LAB_DIR}/Tests/LabTests.cpp ${LAB_DIR}/Tests/StructuralLabTests.cpp)
     tsa_apply_common_settings(TSALab_Tests ${LAB_PRODUCT_DIR} ${LAB_DIR})
     target_precompile_headers(TSALab_Tests REUSE_FROM TSALab_Model)
     target_link_libraries(TSALab_Tests PRIVATE TSALab_Model TSALab_Research)
