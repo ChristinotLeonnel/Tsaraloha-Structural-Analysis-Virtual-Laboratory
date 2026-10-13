@@ -76,6 +76,13 @@ struct SolverReport
     double maxPivot = 0.0;
     int failedEquation = -1;             ///< équation au pivot nul / négatif (mécanisme)
     double elapsedMs = 0.0;
+    /// Même résolution (la durée n'est pas comparée : deux calculs identiques ont des durées différentes).
+    bool operator==(const SolverReport& o) const
+    {
+        return success == o.success && message == o.message && method == o.method && equations == o.equations && iterations == o.iterations
+               && residualHistory == o.residualHistory && relativeResidual == o.relativeResidual && minPivot == o.minPivot
+               && maxPivot == o.maxPivot && failedEquation == o.failedEquation;
+    }
 };
 
 /// Résout K·x = f selon la méthode demandée (K n'est pas modifiée).
