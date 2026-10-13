@@ -352,16 +352,14 @@ bool buildElementClass(Graph& g, std::string* error)
 // =============================================================================================
 // Solveur de l'étudiant (mode 2) : gradient conjugué en blocs mathématiques
 // =============================================================================================
-bool buildStudentSolver(Graph& g, std::string* error)
+/// Système réduit du portique de démonstration (assemblage en un bloc) et solution de référence (Cholesky).
+struct ReducedBlocks
 {
-    g.clear();
-    g.name = "Solveur de l'étudiant (gradient conjugué)";
-    g.description = "Mode 2 — le bloc de résolution est remplacé par un gradient conjugué écrit avec des blocs mathématiques et des variables "
-                    "(r = f − K·x, α = r·r / p·Kp, x ← x + α·p, r ← r − α·Kp, β, p ← r + β·p), sur le système réduit du portique de "
-                    "démonstration ; solution comparée à la résolution de référence (Cholesky). Exercice : remplacer le cœur de la boucle par "
-                    "l'itération de Gauss-Seidel (composant expérimental à écrire).";
-    Builder b(g, NodeLibrary::standard());
-    // Système réduit du portique (chemin direct : assemblage en un bloc)
+    int rs = 0, ref = 0, bc = 0;
+};
+
+ReducedBlocks reducedSystemBlocks(Builder& b)
+{
     const int model = b.node("struct.model_demo_portal", -1500, 100);
     const int loads = b.node("struct.loading", -1250, 260);
     b.link(model, "model", loads, "model");
@@ -387,6 +385,19 @@ bool buildStudentSolver(Graph& g, std::string* error)
     b.link(rs, "rhs", ref, "f");
     b.value(ref, "method", std::string("cholesky"));
     b.frame({ model, loads, dofs, K, F, bc, rs, ref }, "Système réduit et solution de référence\nK_ff·d_f = F_f − K_fc·d_c ; référence : Cholesky", "#3949AB");
+    return { rs, ref, bc };
+}
+
+bool buildStudentSolver(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Solveur de l'étudiant (gradient conjugué)";
+    g.description = "Mode 2 — le bloc de résolution est remplacé par un gradient conjugué écrit avec des blocs mathématiques et des variables "
+                    "(r = f − K·x, α = r·r / p·Kp, x ← x + α·p, r ← r − α·Kp, β, p ← r + β·p), sur le système réduit du portique de "
+                    "démonstration ; solution comparée à la résolution de référence (Cholesky). Variante : « Solveur de l'étudiant "
+                    "(Gauss-Seidel) », qui boucle sur le bloc expérimental d'itération de Gauss-Seidel.";
+    Builder b(g, NodeLibrary::standard());
+    const auto [rs, ref, bc] = reducedSystemBlocks(b);
 
     // Initialisation : x = 0, r = p = f, rr = r·r, it = 0
     const int zeros = b.node("vector.zeros", -500, 100);
@@ -509,6 +520,81 @@ bool buildStudentSolver(Graph& g, std::string* error)
 }
 
 // =============================================================================================
+// Solveur de l'étudiant (mode 2) : itérations de Gauss-Seidel (composant expérimental)
+// =============================================================================================
+bool buildStudentGaussSeidel(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Solveur de l'étudiant (Gauss-Seidel)";
+    g.description = "Mode 2 — le bloc de résolution est remplacé par des itérations de Gauss-Seidel (composant expérimental du laboratoire de "
+                    "l'étudiant) bouclées par « Tant que » jusqu'à un résidu relatif de 1e-10, sur le système réduit du portique ; solution "
+                    "comparée à la résolution de référence (Cholesky). Gauss-Seidel converge pour une matrice symétrique définie positive, "
+                    "d'autant plus lentement qu'elle est mal conditionnée : comparer le nombre d'itérations au gradient conjugué.";
+    Builder b(g, NodeLibrary::standard());
+    const auto [rs, ref, bc] = reducedSystemBlocks(b);
+    const int zeros = b.node("vector.zeros", -500, 100);
+    b.link(bc, "free", zeros, "n");
+    const int start = b.node("event.start", -1500, -320);
+    const int setX0 = b.setVar("x", zeros, "v", -1250, -320);
+    const int setRes0 = b.setVar("res", 0, "", -1000, -320);
+    b.value(setRes0, "value", 1.0);
+    const int setIt0 = b.setVar("it", 0, "", -750, -320);
+    b.value(setIt0, "value", 0LL);
+    b.then(start, setX0);
+    b.then(setX0, setRes0);
+    b.then(setRes0, setIt0);
+    // Condition : résidu > 1e-10 et it < 20 000
+    const int getRes = b.getVar("res", 0, 480);
+    const int getIt = b.getVar("it", 0, 640);
+    const int c1 = b.node("math.compare", 250, 480);
+    b.link(getRes, "value", c1, "a");
+    b.value(c1, "b", 1e-10);
+    b.value(c1, "op", std::string(">"));
+    const int c2 = b.node("math.compare", 250, 640);
+    b.link(getIt, "value", c2, "a");
+    b.value(c2, "b", 20000.0);
+    b.value(c2, "op", std::string("<"));
+    const int cond = b.node("logic.and", 500, 560);
+    b.link(c1, "result", cond, "a");
+    b.link(c2, "result", cond, "b");
+    const int loop = b.node("flow.while", -500, -320);
+    b.link(cond, "result", loop, "condition");
+    b.then(setIt0, loop);
+    // Corps : une itération, résidu mémorisé, compteur
+    const int getX = b.getVar("x", 0, 60);
+    const int sweep = b.node("exp.gauss_seidel_sweep", 250, 100);
+    b.link(rs, "K_ff", sweep, "K");
+    b.link(rs, "rhs", sweep, "f");
+    b.link(getX, "value", sweep, "x");
+    const int itNew = b.node("math.add", 500, 300);
+    b.link(getIt, "value", itNew, "a");
+    b.value(itNew, "b", 1.0);
+    const int setX = b.setVar("x", sweep, "x_next", 0, -320);
+    const int setRes = b.setVar("res", sweep, "residual", 250, -320);
+    const int setIt = b.setVar("it", itNew, "result", 500, -320);
+    b.link(loop, "body", setX, "exec");
+    b.then(setX, setRes);
+    b.then(setRes, setIt);
+    b.frame({ loop, getX, sweep, itNew, setX, setRes, setIt, getRes, getIt, c1, c2, cond },
+            "Algorithme de l'étudiant : itérations de Gauss-Seidel\nx ← GS(K_ff, F_f − K_fc·d_c, x) tant que ‖K·x − f‖/‖f‖ > 1e-10 (20 000 au plus)",
+            "#E65100");
+    const int getX2 = b.getVar("x", 750, 420);
+    const int cmp = b.node("vector.compare", 1000, 420);
+    b.link(getX2, "value", cmp, "x");
+    b.link(ref, "x", cmp, "reference");
+    b.value(cmp, "tolerance", 1e-8);
+    const int getIt2 = b.getVar("it", 1250, 600);
+    const int p1 = b.print("Itérations de Gauss-Seidel : ", getIt2, "value", 750, -320);
+    const int p2 = b.print("Gauss-Seidel comparé à Cholesky : ", cmp, "report", 1000, -320);
+    const int p3 = b.print("Solveur de l'étudiant (Gauss-Seidel) conforme : ", cmp, "passed", 1250, -320);
+    b.link(loop, "completed", p1, "exec");
+    b.then(p1, p2);
+    b.then(p2, p3);
+    b.frame({ getX2, cmp, getIt2, p1, p2, p3 }, "Comparaison à la solution de référence\nécart relatif ≤ 1e-8 (résidu 1e-10 × conditionnement)", "#558B2F");
+    return b.ok(error);
+}
+
+// =============================================================================================
 // Mécanisme
 // =============================================================================================
 bool buildMechanism(Graph& g, std::string* error)
@@ -616,6 +702,8 @@ const std::vector<Info>& catalog()
           "Mode 1 : nœuds, matériau et section du catalogue → élément, longueur, angle, k', T, k = Tᵀk'T, charges nodales équivalentes." },
         { "solveur-etudiant", "Solveur de l'étudiant (gradient conjugué)",
           "Mode 2 : la résolution est écrite avec des blocs mathématiques et des variables, puis comparée à la solution de référence." },
+        { "solveur-etudiant-gs", "Solveur de l'étudiant (Gauss-Seidel)",
+          "Mode 2 : itérations de Gauss-Seidel (composant expérimental) bouclées jusqu'à convergence, comparées à la solution de référence." },
         { "mecanisme", "Système instable : détection du mécanisme",
           "Poutre sans appui horizontal : diagnostic du mécanisme (DDL, mode de corps rigide, causes possibles)." },
         { "tassement", "Tassement d'appui (déplacement imposé)",
@@ -629,6 +717,7 @@ bool build(const std::string& id, Graph& graph, std::string* error)
     if (id == "methode-deplacements-2d") return buildMethod(graph, error);
     if (id == "classe-frame-element") return buildElementClass(graph, error);
     if (id == "solveur-etudiant") return buildStudentSolver(graph, error);
+    if (id == "solveur-etudiant-gs") return buildStudentGaussSeidel(graph, error);
     if (id == "mecanisme") return buildMechanism(graph, error);
     if (id == "tassement") return buildSettlement(graph, error);
     if (error) *error = "exemple inconnu « " + id + " »";

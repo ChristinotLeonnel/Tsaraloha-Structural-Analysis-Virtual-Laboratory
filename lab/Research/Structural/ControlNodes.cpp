@@ -1,7 +1,7 @@
 // Catégorie E — contrôle et affichage : boucles sur les éléments et les identifiants, sélection et filtre d'éléments,
 // comparaison de vecteurs, courbes, visualisation (tableau des résultats), export des résultats.
 // Composants expérimentaux (laboratoire de l'étudiant) : itérations de Jacobi et de Gauss-Seidel pour écrire son
-// propre solveur et le comparer à la solution de référence.
+// propre solveur et le comparer à la solution de référence ; séparés des composants validés.
 
 #include "NodeHelpers.h"
 #include "ResultBoard.h"
@@ -134,16 +134,21 @@ double relativeResidual(const Matrix& K, const Vector& x, const Vector& f)
     return nf > 0.0 ? LA::norm2(r) / nf : LA::norm2(r);
 }
 
-/// Exercice du laboratoire de l'étudiant : UNE itération de Gauss-Seidel pour K·x = f, en mettant x à jour sur place
-/// (x contient l'itéré k à l'entrée, l'itéré k + 1 à la sortie). Dimensions et diagonale non nulle déjà contrôlées.
-/// Rend vrai une fois l'itération écrite ; faux tant qu'elle ne l'est pas (le bloc le signale).
+/// UNE itération de Gauss-Seidel pour K·x = f, x mis à jour sur place (itéré k à l'entrée, k + 1 à la sortie) :
+///   x_i ← (f_i − Σ_{j<i} K_ij·x_j(k+1) − Σ_{j>i} K_ij·x_j(k)) / K_ii
+/// Mise à jour sur place : quand x_i est calculé, x_j pour j < i contient déjà l'itéré k + 1 (c'est la différence avec
+/// Jacobi, qui n'utilise que l'itéré k). Dimensions et diagonale non nulle contrôlées par l'appelant (iterationInputs).
 bool gaussSeidelSweep(const Matrix& K, const Vector& f, Vector& x)
 {
-    // TODO(human)
-    (void)K;
-    (void)f;
-    (void)x;
-    return false;
+    const int n = K.rows;
+    for (int i = 0; i < n; ++i)
+    {
+        double s = f[static_cast<std::size_t>(i)];
+        for (int j = 0; j < n; ++j)
+            if (j != i) s -= K(i, j) * x[static_cast<std::size_t>(j)];
+        x[static_cast<std::size_t>(i)] = s / K(i, i);
+    }
+    return true;
 }
 } // namespace
 
@@ -409,15 +414,18 @@ void registerControlNodes(NodeLibrary& lib)
         });
     }
     {
-        NodeDefinition d = pureBlock("exp.gauss_seidel_sweep", "Itération de Gauss-Seidel (exercice)", kExperimental,
-                                     "Exercice : une itération de Gauss-Seidel pour K·x = f, à écrire dans le code du bloc (le bloc signale tant qu'elle "
-                                     "n'est pas écrite).",
+        NodeDefinition d = pureBlock("exp.gauss_seidel_sweep", "Itération de Gauss-Seidel", kExperimental,
+                                     "Une itération de Gauss-Seidel pour K·x = f : chaque composante utilise les composantes précédentes "
+                                     "déjà mises à jour. Brique d'un solveur itératif écrit par l'étudiant.",
                                      { object("K", "K", Type::Matrix), object("f", "f", Type::Vector), object("x", "x", Type::Vector) },
                                      { object("x_next", "x suivant", Type::Vector), data("residual", "Résidu relatif de x suivant", VT::Real) },
-                                     "Gauss-Seidel : comme Jacobi, mais chaque composante x_i est calculée avec les composantes x_j (j < i) DÉJÀ mises à jour "
-                                     "dans la même itération. Converge pour K symétrique définie positive (une rigidité de structure stable), en général plus "
-                                     "vite que Jacobi.\nÉtat : exercice du laboratoire de l'étudiant — logique à écrire dans ControlNodes.cpp (fonction "
-                                     "gaussSeidelSweep). Tant qu'elle n'est pas écrite, le bloc échoue avec un message explicite : il n'est pas utilisable.",
+                                     "x_i(k+1) = (f_i − Σ_{j<i} K_ij·x_j(k+1) − Σ_{j>i} K_ij·x_j(k)) / K_ii : contrairement à Jacobi, les "
+                                     "composantes déjà calculées dans l'itération sont utilisées aussitôt (mise à jour sur place). Converge pour K "
+                                     "symétrique définie positive (rigidité d'une structure stable), en général plus vite que Jacobi ; la vitesse "
+                                     "dépend du conditionnement. À boucler avec « Tant que » jusqu'à un résidu ‖K·x − f‖/‖f‖ assez petit, puis à "
+                                     "comparer à « Résoudre K·x = f ».\nÉtat : implémenté (fonction gaussSeidelSweep), convergence vérifiée par le "
+                                     "test L19 et par l'exemple « Solveur de l'étudiant (Gauss-Seidel) ». Composant du laboratoire de l'étudiant : "
+                                     "non utilisé par les blocs validés, convergence non garantie pour une matrice quelconque.",
                                      "TSALab/lab/Research/Structural/ControlNodes.cpp");
         d.status = NodeStatus::Experimental;
         lib.add(std::move(d), [](ExecutionContext& c) {
@@ -425,8 +433,7 @@ void registerControlNodes(NodeLibrary& lib)
             const LabeledVector *f = nullptr, *x = nullptr;
             if (!iterationInputs(c, K, f, x)) return false;
             Vector next = x->vector;
-            if (!gaussSeidelSweep(K->matrix, f->vector, next))
-                return c.fail("itération de Gauss-Seidel non écrite (exercice : fonction gaussSeidelSweep de ControlNodes.cpp)");
+            if (!gaussSeidelSweep(K->matrix, f->vector, next)) return c.fail("itération de Gauss-Seidel impossible");
             c.setOutput("residual", relativeResidual(K->matrix, next, f->vector));
             c.setOutput("x_next", vectorOut(std::move(next), x->labels, "x (Gauss-Seidel)"));
             return true;

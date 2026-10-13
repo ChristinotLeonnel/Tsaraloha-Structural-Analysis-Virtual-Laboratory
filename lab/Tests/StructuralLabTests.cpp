@@ -322,17 +322,38 @@ bool runSuite_Structural(int& passed)
         TEST_CHECK(b.error.empty(), "Test L19: graphe Gauss-Seidel (" << b.error << ")");
         TEST_CHECK(lib.find("exp.gauss_seidel_sweep")->status == NodeStatus::Experimental, "Test L19: Gauss-Seidel est un composant expérimental");
         const auto gsRep = Runner(lib, gs, nullptr).run();
-        if (gsRep.ok)
+        TEST_CHECK(gsRep.ok && !gsRep.log.empty() && gsRep.log.back() == "vrai",
+                   "Test L19: Gauss-Seidel — 60 itérations convergent vers la solution LU à 1e-10 (" << gsRep.message << ")");
+        // Une itération à la main : x1 = (f1 − 0)/4, x2 = (f2 − 1·x1)/3, x3 = (f3 − 1·x2)/2 (x0 = 0)
         {
-            TEST_CHECK(!gsRep.log.empty() && gsRep.log.back() == "vrai", "Test L19: Gauss-Seidel écrit — converge vers la solution de référence (60 itérations)");
-            std::cout << "  Gauss-Seidel (exercice) : écrit, converge vers la référence" << std::endl;
+            Graph one;
+            Builder ob { one, lib };
+            const int k1 = ob.node("matrix.from_text", { { "text", std::string("4 1 0 ; 1 3 1 ; 0 1 2") } });
+            const int f1 = ob.node("vector.from_text", { { "text", std::string("1 2 3") } });
+            const int z1 = ob.node("vector.zeros", { { "n", 3LL } });
+            const int sw = ob.node("exp.gauss_seidel_sweep"), st = ob.node("event.start"), pr = ob.node("debug.print");
+            ob.link(k1, "M", sw, "K");
+            ob.link(f1, "v", sw, "f");
+            ob.link(z1, "v", sw, "x");
+            ob.link(sw, "residual", pr, "value");
+            ob.then(st, pr);
+            const auto r1 = Runner(lib, one, nullptr).run();
+            const auto* x1 = outputObject<RS::VectorObject>(r1, sw, "x_next");
+            const double e1 = 0.25, e2 = (2.0 - e1) / 3.0, e3 = (3.0 - e2) / 2.0;
+            TEST_CHECK(r1.ok && x1 && x1->value().vector.size() == 3 && std::abs(x1->value().vector[0] - e1) <= 1e-15
+                           && std::abs(x1->value().vector[1] - e2) <= 1e-15 && std::abs(x1->value().vector[2] - e3) <= 1e-15,
+                       "Test L19: une itération de Gauss-Seidel utilise les composantes déjà mises à jour");
         }
-        else
-        {
-            TEST_CHECK(gsRep.message.find("non écrite") != std::string::npos, "Test L19: Gauss-Seidel non écrit — refus explicite (" << gsRep.message << ")");
-            std::cout << "  Gauss-Seidel (exercice) : non écrit, refus explicite — " << gsRep.message << std::endl;
-        }
-        std::cout << "[PASS] Test L19: mode 2 — gradient conjugué en blocs (" << it << " itérations) ≡ Cholesky ; exercice Gauss-Seidel séparé" << std::endl;
+        // Exemple : Gauss-Seidel sur le système réduit du portique, comparé à Cholesky
+        Graph gse;
+        TEST_CHECK(SG::build("solveur-etudiant-gs", gse, &error), "Test L19: exemple Gauss-Seidel construit (" << error << ")");
+        const auto gseRep = Runner(lib, gse, nullptr).run();
+        const Value gsIt = gseRep.variables.count("it") ? gseRep.variables.at("it") : Value {};
+        const double gsIterations = std::holds_alternative<double>(gsIt) ? std::get<double>(gsIt) : -1.0;
+        TEST_CHECK(gseRep.ok && logContains(gseRep, "Solveur de l'étudiant (Gauss-Seidel) conforme : vrai") && gsIterations > 0.0 && gsIterations < 20000.0,
+                   "Test L19: Gauss-Seidel sur le portique conforme à Cholesky en " << gsIterations << " itérations (" << gseRep.message << ")");
+        std::cout << "[PASS] Test L19: mode 2 — gradient conjugué en blocs (" << it << " itérations) et Gauss-Seidel (" << gsIterations
+                  << " itérations) ≡ Cholesky" << std::endl;
         ++passed;
     }
 
