@@ -22,7 +22,7 @@
   <a href="docs/AI_COENGINEERING.md"><img src="https://img.shields.io/badge/AI-Co--Engineering-8b5cf6?style=for-the-badge&logo=openai&logoColor=white" alt="AI Co-Engineering" /></a>
   <a href="https://www.microsoft.com/windows"><img src="https://img.shields.io/badge/Platform-Windows%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64" /></a>
   <a href="https://cmake.org"><img src="https://img.shields.io/badge/CMake-Ninja-064F8C?style=for-the-badge&logo=cmake&logoColor=white" alt="CMake & Ninja" /></a>
-  <a href="#-tests-automatisés"><img src="https://img.shields.io/badge/Tests%20TSALab-7%2F7%20%C2%B7%20science%206%2F6-10b981?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests TSALab 7/7, science 6/6" /></a>
+  <a href="#-tests-automatisés"><img src="https://img.shields.io/badge/Tests%20TSALab-19%2F19%20%C2%B7%20science%2016%2F16-10b981?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests TSALab 19/19, science 16/16" /></a>
   <a href="docs/NORMATIVE_SYSTEM.md"><img src="https://img.shields.io/badge/Eurocodes-EN%201990--1999-f59e0b?style=for-the-badge" alt="Eurocodes" /></a>
 </p>
 
@@ -58,7 +58,10 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
   jamais réécrits), exemples à solution analytique connue (console, poutres, portique, treillis, portique spatial).
 * **Espaces du laboratoire** autour du viewport commun :
   * **Modèle** — modélisation, calcul, résultats et note de calcul (bibliothèques partagées avec TSA) ;
-  * **Blueprint** — programmation visuelle des expériences (nœuds typés, débogueur, exécution pas à pas) ;
+  * **Blueprint** — programmation visuelle des expériences (nœuds typés, débogueur, exécution pas à pas) et
+    **TSALab Blueprint — Structural Programming Laboratory** : classe `FrameElement2D` à 6 DDL, charges, assemblage,
+    conditions aux limites et résolution en blocs pré-codés ; graphe `Methode_Des_Deplacements_2D` comparé au calcul
+    direct ; solveur écrit par l'étudiant ([`docs/BLUEPRINT_STRUCTUREL.md`](docs/BLUEPRINT_STRUCTUREL.md)) ;
   * **Analyse** — gestionnaire d'analyse partagé (moteurs, réglages, validation, calcul en tâche de fond) ;
   * **Résultats** — diagrammes 2D par barre ;
   * **Recherche (SOLVER LAB)** — rejoue la résolution `K·U = F` du dernier calcul avec des solveurs instrumentés
@@ -79,7 +82,7 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
 * **Laboratoire matriciel** (dock « Données d'analyse ») : DDL, K globale, matrices élémentaires, vecteurs F et U,
   transformations local / global, exports CSV des seules données fournies par le moteur.
 * **Affichage** : échelles des annotations et des charges, profils d'affichage, diagnostic (composant partagé avec TSA).
-* **Suite de tests `lab`** (L4–L13) et tests du cœur scientifique (S1–S6), en plus des tests de la base commune
+* **Suite de tests `lab`** (L4–L22) et tests du cœur scientifique (S1–S16), en plus des tests de la base commune
   (dépôt TSA). Documentation du laboratoire : [`docs/`](docs/).
 
 ---
@@ -314,9 +317,9 @@ données d'analyse (K, F, U), assistant IA. Un seul projet par fenêtre (voir `d
 
 | Exécutable | Contenu | État au 12/10/2026 |
 | :--- | :--- | :--- |
-| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints (dont l'expérience en nœuds), L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences, L11 première expérience complète, L12 laboratoire matriciel, L13 convergence en maillage, L14 plaque maillée | 11 / 11 |
-| `tsalab_science_tests` | S1–S6 : algèbre linéaire, solveurs plans, MetDeDeplacement, benchmarks plans, OpenSees ≈ MetDeDeplacement | 6 / 6 |
-| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation, commandes… | 390 tests dans TSA |
+| `TSALab_TestSuite` | L4 exemples et format `.tsalab`, L5 import `.tsa`, L6 Blueprints (dont l'expérience en nœuds), L7 analyse et SOLVER LAB, L8 plugin d'exemple, L9 laboratoire de validation, L10 journal d'expériences, L11 première expérience complète, L12 laboratoire matriciel, L13 convergence en maillage, L14 plaque maillée ; programmation structurelle : L15 bibliothèque, L16 Methode_Des_Deplacements_2D ≡ calcul direct, L17 sauvegarde et réouverture, L18 mécanisme, L19 solveur de l'étudiant, L20 modèle et charges par blocs, L21 tassement, L22 blocs mathématiques (`--structural` : L15 à L22 seuls) | 19 / 19 |
+| `tsalab_science_tests` | S1–S6 : algèbre linéaire, solveurs plans, MetDeDeplacement, benchmarks plans, OpenSees ≈ MetDeDeplacement ; S7–S16 : `FrameElement2D`, barre axiale, poutres, charges, portique, élément incliné, déplacements imposés, mécanismes, nœud partagé, combinaisons ≡ MetDeDeplacement | 16 / 16 |
+| `TSA_TestSuite` (dépôt TSA) | base commune : modèle, IO, vue, analyse, résultats, maillage, coques, validation, commandes, Blueprint… | 391 tests dans TSA |
 
 ```powershell
 cmake --build --preset ninja-debug
@@ -375,11 +378,13 @@ TSALab/
 ├── lab/
 │   ├── LabApp/                 # main.cpp, LabMainWindow (fenêtre et espaces du laboratoire)
 │   ├── LabUI/                  # LabStartPanel, SolverLabPage, ValidationPage, ExperimentsPage
-│   ├── Research/               # Examples (modèles et Blueprints d'exemple), Solver (SOLVER LAB),
+│   ├── Research/               # Examples (modèles, Blueprints et graphes structurels d'exemple), Solver (SOLVER LAB),
+│   │                           # Structural (blocs pré-codés de TSALab Blueprint, objets typés, modèles de démonstration),
 │   │                           # Validation (banc partagé), Experiments (journal d'expériences)
 │   └── Tests/LabTests.cpp      # Suite « lab » (TSALab_TestSuite)
 ├── science/                    # Cœur scientifique C++ pur (numerics, solveurs plans, MetDeDeplacement, validation),
-│                               # utilisé aussi par TSA (moteur Custom2D) ; tests S1–S6, outil tsalab-bench
+│                               # utilisé aussi par TSA (moteur Custom2D) ; structural/ : FrameElement2D et méthode des
+│                               # déplacements pas à pas ; tests S1–S16, outil tsalab-bench
 ├── plugins/sample/             # Plugin d'exemple (API docs/PLUGINS.md du dépôt TSA)
 ├── docs/                       # Documentation du laboratoire (architecture, API des solveurs, validation, feuille de route, audit)
 ├── resources/                  # Icônes et ressources Windows de TSALab

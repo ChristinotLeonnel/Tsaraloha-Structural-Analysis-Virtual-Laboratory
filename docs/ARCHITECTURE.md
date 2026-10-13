@@ -44,9 +44,10 @@ modèle) : 0 violation.
 | `lab/Research/Validation` | exécution du banc de validation partagé avec TSA ; étude de convergence en maillage (`MeshConvergence`) | `TSALab_Research` |
 | `lab/Research/Reference` | références analytiques appliquées au modèle de l'utilisateur, hypothèses vérifiées (`AnalyticalReference`) | `TSALab_Research` |
 | `lab/Research/Experiments` | journal d'expériences : traçabilité, référence, rejeu | `TSALab_Research` |
-| `lab/LabUI` | pages Accueil, SOLVER LAB, Validation, Expériences | exécutable |
+| `lab/Research/Structural` | TSALab Blueprint — programmation structurelle : objets typés (matrices, modèle, éléments, charges, résultats), blocs pré-codés (catégories A à E, expérimental), modèles de démonstration, tableau des résultats (`BLUEPRINT_STRUCTUREL.md`) | `TSALab_Research` |
+| `lab/LabUI` | pages Accueil, SOLVER LAB, Validation, Expériences ; vues des objets de la programmation structurelle (matrice, diagrammes, portique `Frame2DView`) | exécutable |
 | `lab/LabApp` | fenêtre et câblage des espaces | exécutable |
-| `science/` | numerics, solveurs plans, MetDeDeplacement, benchmarks plans | `tsalab_science` |
+| `science/` | numerics, solveurs plans, MetDeDeplacement, benchmarks plans ; `structural/` : `FrameElement2D` (6 DDL) et méthode des déplacements étape par étape | `tsalab_science` |
 
 La logique scientifique est toujours séparée de l'interface (`Research`, `science`) pour être testée sans fenêtre.
 
@@ -101,3 +102,15 @@ Ajouter une commande, c'est donc ajouter un nœud, qui est aussi disponible dans
 | exporter un rapport | `science.validation_bench` (rapport du banc dans le journal) | **partiel** : pas de rapport d'expérience exporté par un nœud |
 
 Exemple complet : Blueprint « Expérience : poutre bi-appuyée » (`lab/Research/Examples/BlueprintExamples.cpp`, test L6).
+
+### Programmation structurelle (TSALab Blueprint)
+
+Le laboratoire ajoute à la même bibliothèque, au démarrage (`registerStructuralNodes`, `lab/LabApp/main.cpp`), 104
+blocs de calcul des structures : catégories « Structure A » (modèle, charges) à « Structure E » (contrôle, affichage)
+et « Expérimental ». Ils transportent des **objets typés** (valeurs `ObjectValue` du moteur partagé :
+`FrameElement2D`, `Matrix`, `StructuralModel`, `SolverResult`…), contrôlés à la connexion. La science est celle de
+`science/structural` (C++ pur, tests S7 à S16) ; les graphes d'exemple (`Methode_Des_Deplacements_2D`, classe
+`FrameElement2D`, solveur de l'étudiant, mécanisme, tassement) sont dans `lab/Research/Examples/StructuralGraphs.*`
+(tests L15 à L22). Ces blocs n'utilisent pas le projet : leurs graphes s'exécutent en tâche de fond, et le bloc
+« Visualiser » publie le résultat dans le dock « Résultats 2D » par `ResultBoard` (sûr entre threads). Détail :
+`BLUEPRINT_STRUCTUREL.md`.
