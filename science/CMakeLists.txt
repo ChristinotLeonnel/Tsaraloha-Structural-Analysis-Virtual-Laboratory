@@ -1,6 +1,8 @@
 # TSALab — cœur scientifique (C++20 pur : ni Qt, ni OpenCASCADE, ni modèle TSA).
 #   tsalab_science : numerics (solveurs instrumentés, valeurs propres, comparaison de solveurs),
 #                    solveurs d'ossatures planes (API tsalab::planar, MetDeDeplacement),
+#                    programmation structurelle (tsalab::structural : FrameElement2D, méthode des
+#                    déplacements pas à pas, utilisée par TSALab Blueprint),
 #                    validation (benchmarks à solution analytique, validation croisée)
 #   tsalab-bench   : console — exécute le banc de validation sur tous les solveurs
 #   tsalab_science_tests : tests sans Qt
@@ -19,6 +21,11 @@ add_library(tsalab_science STATIC
     include/tsalab/planar/PlanarSolver.h
     include/tsalab/planar/PlanarSolvers.h
     include/tsalab/validation/PlanarBenchmarks.h
+    include/tsalab/structural/Frame2D.h
+    include/tsalab/structural/FrameElement2D.h
+    include/tsalab/structural/DirectStiffness2D.h
+    include/tsalab/structural/Dynamics2D.h
+    include/tsalab/structural/MovingLoads2D.h
     src/LinearAlgebra.cpp
     src/SolverComparison.cpp
     src/MddBridge.h
@@ -26,6 +33,11 @@ add_library(tsalab_science STATIC
     src/MetDeDeplacementSolver.cpp
     src/OpenSeesPlanarSolver.cpp
     src/PlanarBenchmarks.cpp
+    src/structural/Frame2D.cpp
+    src/structural/FrameElement2D.cpp
+    src/structural/DirectStiffness2D.cpp
+    src/structural/Dynamics2D.cpp
+    src/structural/MovingLoads2D.cpp
 )
 add_library(tsalab::science ALIAS tsalab_science)
 target_include_directories(tsalab_science PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -53,7 +65,7 @@ option(TSALAB_SCIENCE_TOOLS "Compiler tsalab-bench et les tests du cœur scienti
 if(TSALAB_SCIENCE_TOOLS)
     add_executable(tsalab-bench tools/tsalab_bench.cpp)
     target_link_libraries(tsalab-bench PRIVATE tsalab_science)
-    add_executable(tsalab_science_tests tests/ScienceTests.cpp)
+    add_executable(tsalab_science_tests tests/ScienceTests.cpp tests/StructuralTests.cpp tests/DynamicsTests.cpp)
     target_link_libraries(tsalab_science_tests PRIVATE tsalab_science)
     if(MSVC)
         target_compile_options(tsalab-bench PRIVATE /W4 /permissive- /utf-8)

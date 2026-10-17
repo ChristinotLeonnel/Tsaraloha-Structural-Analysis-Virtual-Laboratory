@@ -21,6 +21,7 @@ struct DenseMatrix
     bool empty() const { return rows == 0 || cols == 0; }
     double& operator()(int i, int j) { return data[static_cast<std::size_t>(i) * cols + j]; }
     double operator()(int i, int j) const { return data[static_cast<std::size_t>(i) * cols + j]; }
+    bool operator==(const DenseMatrix&) const = default;
 };
 
 using Vector = std::vector<double>;

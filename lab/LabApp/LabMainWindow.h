@@ -92,6 +92,8 @@ private:
     void createAssistant();
     void createMesh();
     void createMeshMenu();
+    /// Objets déposés par les graphes (ResultBoard) : résultat ou modèle → dock « Résultats 2D », autres → fenêtre de vue.
+    void showPublishedObjects();
     void refreshMeshOverlay();
     void showMeshQuality();
     void showPlugins();
@@ -141,6 +143,9 @@ private:
     TSA::UI::LogConsoleDock* m_console = nullptr;
     QDockWidget* m_treeDock = nullptr;
     QDockWidget* m_propertiesDock = nullptr;
+    /// Résultats 2D de la programmation structurelle (bloc « Visualiser » des graphes) : portique, déformée, diagrammes.
+    QDockWidget* m_frameDock = nullptr;
+    class Frame2DView* m_frameView = nullptr;
 
     // Maillage (Gmsh) : composants partagés avec TSA (TSA/src/UI/Mesh, TSA/src/Viewer/MeshVisual)
     TSA::UI::MeshController* m_mesh = nullptr;

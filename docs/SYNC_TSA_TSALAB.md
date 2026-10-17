@@ -141,3 +141,19 @@ son menu Maillage.
    - **fenêtre de TSA** : non disponible ; décider s'il faut le déplacer vers une couche partagée ;
    - **incompatible** : à corriger, ou à noter ci-dessus.
 4. Ajouter ici une entrée datée : base, branches, actions, incompatibilités, résultats des tests.
+
+## 13/10/2026 — synchronisation 3 (mission « TSALab Blueprint — programmation structurelle »)
+
+Branches : TSA `feature/blueprint-structurel`, TSALab `feature/blueprint-structurel` (TSALab dépend de la branche TSA :
+TSA est fusionné en premier). Base : TSA `abc007d`, TSALab `4a242b2`.
+
+| Sujet (dépôt TSA, couche) | Changement | Effet dans TSALab |
+| :--- | :--- | :--- |
+| `Automation/CommandRegistry` (modèle) | `Value` accepte des objets (`ObjectValue`, `ObjectRef`), `ValueType::Object`, `sameValue` ; `catalogSection`, `catalogMaterial` publics | objets typés des blocs structurels ; sections et matériaux du catalogue sans copie du code |
+| `Blueprint` (modèle) | broches d'objets typées, réutilisation des résultats (`EvaluationCache`), variables, statut / version / documentation / source des nœuds, cycles d'exécution, avertissements de dépendance, commentaires, fichier `.tsbp` v2, fragments de presse-papiers | moteur des graphes de programmation structurelle |
+| `UI/Blueprint` (widgets) | copier / coller / dupliquer, commentaires, onglets Valeurs et Problèmes, vues d'objets extensibles (`BlueprintObjectViewer`), documentation et code source (F1), saisie des réels en pleine précision | éditeur de TSALab (même composant) ; vues enregistrées par `registerStructuralViewers` |
+| `Plugins/PluginApi.h` | `kApiVersion` 1 → 2 (disposition de `Value` et de `NodeDefinition` modifiée) | plugin d'exemple recompilé avec l'application (L8) |
+
+Vérifications : TSA 391/391 et `check_layers` 0 ; TSALab 19/19 ; cœur scientifique 16/16 ; TSALab réel (graphe,
+exécution, matrice K, documentation, mécanisme). Largeur de la fenêtre de TSALab inchangée (2022 px, comme avant la
+mission, avec le nouveau dock « Résultats 2D »).

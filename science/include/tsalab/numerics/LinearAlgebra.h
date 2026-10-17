@@ -76,10 +76,32 @@ struct SolverReport
     double maxPivot = 0.0;
     int failedEquation = -1;             ///< équation au pivot nul / négatif (mécanisme)
     double elapsedMs = 0.0;
+    /// Même résolution (la durée n'est pas comparée : deux calculs identiques ont des durées différentes).
+    bool operator==(const SolverReport& o) const
+    {
+        return success == o.success && message == o.message && method == o.method && equations == o.equations && iterations == o.iterations
+               && residualHistory == o.residualHistory && relativeResidual == o.relativeResidual && minPivot == o.minPivot
+               && maxPivot == o.maxPivot && failedEquation == o.failedEquation;
+    }
 };
 
 /// Résout K·x = f selon la méthode demandée (K n'est pas modifiée).
 SolverReport solve(const Matrix& K, const Vector& f, Vector& x, const SolverSettings& settings);
+
+/// Factorisation de Cholesky conservée (K = L·Lᵀ) : une factorisation, plusieurs seconds membres (intégration
+/// temporelle, positions successives d'une charge mobile). Même critère de pivot que solve().
+struct CholeskyFactorization
+{
+    bool success = false;
+    std::string message;
+    Matrix L;                     ///< partie inférieure
+    int failedEquation = -1;
+    double minPivot = 0.0, maxPivot = 0.0;
+
+    bool factor(const Matrix& K, double pivotTolerance = 1e-11);
+    /// x tel que K·x = f (factorisation réussie, taille concordante ; sinon vecteur vide).
+    Vector solve(const Vector& f) const;
+};
 
 // -------------------------------------------------------------------------------------------
 // Valeurs propres

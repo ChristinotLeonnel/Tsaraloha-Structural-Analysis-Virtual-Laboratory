@@ -688,6 +688,10 @@ bool runSuite_Lab(int& passed)
 
 } // namespace
 
+// Programmation structurelle (StructuralLabTests.cpp) : tests L15 à L27.
+bool runSuite_Structural(int& passed);
+int structuralLabTestCount();
+
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv); // aperçu des projets (QPainter, polices) : application graphique requise
@@ -695,7 +699,10 @@ int main(int argc, char* argv[])
     std::cout << "TSALab Unit Tests" << std::endl;
     std::cout << "=================================================" << std::endl;
     int passed = 0;
-    const bool ok = runSuite_Lab(passed);
-    std::cout << "\nRESULTS: " << passed << " / " << kLabTests << " tests passed" << (ok ? " successfully!" : " (FAILURE)") << std::endl;
-    return ok && passed == kLabTests ? 0 : 1;
+    // --structural : seulement la programmation structurelle (L15 à L27), sans les calculs OpenSees de L4 à L14
+    const bool structuralOnly = argc > 1 && std::strcmp(argv[1], "--structural") == 0;
+    const int expected = (structuralOnly ? 0 : kLabTests) + structuralLabTestCount();
+    const bool ok = (structuralOnly || runSuite_Lab(passed)) && runSuite_Structural(passed);
+    std::cout << "\nRESULTS: " << passed << " / " << expected << " tests passed" << (ok ? " successfully!" : " (FAILURE)") << std::endl;
+    return ok && passed == expected ? 0 : 1;
 }
