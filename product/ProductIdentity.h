@@ -78,4 +78,8 @@ inline constexpr char kThumbnailProviderDll[] = "TSALabThumbnailProvider.dll";
 // version comme un autre logiciel (pas de mise à jour en place, deux entrées dans « Programmes »).
 inline constexpr char kInstallerAppId[] = "9D127C38-F462-47D1-8E4A-855BB5F04C9D";
 
+// Dépôt public du code source : exigé par la GPL de Gmsh pour toute version distribuée (paquet :
+// licenses/Gmsh/SOURCE.txt, lu par CMake).
+inline constexpr char kSourceRepositoryUrl[] = "https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis-Virtual-Laboratory";
+
 } // namespace TSA::Product
