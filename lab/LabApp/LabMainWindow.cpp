@@ -12,6 +12,7 @@
 #include "Research/Structural/ResultBoard.h"
 #include "Research/Structural/StructuralObjects.h"
 #include "LabUI/StructuralViewers.h"
+#include "LabUI/TsaImportDialog.h"
 #include "UI/Blueprint/BlueprintObjectViewer.h"
 
 #include "AI/Core/AIOrchestrator.h"
@@ -613,6 +614,21 @@ void LabMainWindow::createMenus()
         });
         a->setToolTip(QString::fromStdString(ex.description));
     }
+    // Portique plan importé d'un projet TSA : aperçu (rapport importé / converti / ignoré), puis graphe d'analyse
+    bp->addAction(tr("Importer un portique d'un projet TSA…"), this, [this] {
+        TSALab::UI::TsaImportDialog dialog(this);
+        if (dialog.exec() != QDialog::Accepted) return;
+        TSA::Blueprint::Graph g;
+        QString error;
+        if (!dialog.analysisGraph(g, &error))
+        {
+            log(tr("Import TSA : %1").arg(error), QStringLiteral("ERROR"));
+            return;
+        }
+        m_blueprint->setGraph(std::move(g));
+        m_workspaces->setCurrentWidget(m_blueprint);
+        log(tr("Graphe d'analyse du projet TSA ouvert : %1 (Exécuter pour calculer).").arg(QString::fromStdString(m_blueprint->graph().name)));
+    });
 
     // --- Analyse : gestionnaire partagé (mêmes moteurs, mêmes réglages que TSA)
     QMenu* an = menuBar()->addMenu(tr("A&nalyse"));

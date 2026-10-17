@@ -85,6 +85,11 @@ add_library(TSALab_Research OBJECT
     ${LAB_DIR}/Research/Structural/AssemblyNodes.cpp
     ${LAB_DIR}/Research/Structural/MatrixNodes.cpp
     ${LAB_DIR}/Research/Structural/ControlNodes.cpp
+    ${LAB_DIR}/Research/Structural/DynamicsNodes.cpp
+    ${LAB_DIR}/Research/Structural/TsaImport.h
+    ${LAB_DIR}/Research/Structural/TsaImport.cpp
+    ${LAB_DIR}/Research/Structural/StructuralJson.h
+    ${LAB_DIR}/Research/Structural/StructuralJson.cpp
     ${LAB_DIR}/Research/Structural/ResultBoard.h
     ${LAB_DIR}/Research/Structural/ResultBoard.cpp
     ${LAB_DIR}/Research/Structural/StructuralLibrary.h
@@ -115,6 +120,8 @@ add_executable(TSALab
     ${LAB_DIR}/LabUI/ExperimentsPage.cpp
     ${LAB_DIR}/LabUI/StructuralViewers.h
     ${LAB_DIR}/LabUI/StructuralViewers.cpp
+    ${LAB_DIR}/LabUI/TsaImportDialog.h
+    ${LAB_DIR}/LabUI/TsaImportDialog.cpp
     ${TSA_ROOT_DIR}/resources/resources.qrc
     ${TSA_ROOT_DIR}/resources/templates.qrc
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/lab.qrc

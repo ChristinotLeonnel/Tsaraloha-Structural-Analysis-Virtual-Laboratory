@@ -11,6 +11,8 @@
 
 #include "Automation/CommandRegistry.h"
 #include "tsalab/structural/DirectStiffness2D.h"
+#include "tsalab/structural/Dynamics2D.h"
+#include "tsalab/structural/MovingLoads2D.h"
 
 #include <memory>
 #include <string>
@@ -45,6 +47,15 @@ inline constexpr char Reduced[] = "ReducedSystem";
 inline constexpr char Result[] = "SolverResult";
 inline constexpr char Diagram[] = "InternalForceDiagram";
 inline constexpr char Curve[] = "Curve";
+// Dynamique (pédagogique) et charges roulantes
+inline constexpr char Modal[] = "ModalResult";
+inline constexpr char TimeFunction[] = "TimeFunction";
+inline constexpr char GroundMotion[] = "GroundMotion";
+inline constexpr char TimeHistory[] = "TimeHistoryResult";
+inline constexpr char Spectrum[] = "ResponseSpectrum";
+inline constexpr char Spectral[] = "SpectralResult";
+inline constexpr char Vehicle[] = "Vehicle";
+inline constexpr char MovingLoad[] = "MovingLoadResult";
 } // namespace Type
 
 /// Matrice avec libellés de lignes et de colonnes (DDL) et titre.
@@ -128,6 +139,22 @@ std::string summary(const DiagramData& d);
 std::string details(const DiagramData& d);
 std::string summary(const CurveData& c);
 std::string details(const CurveData& c);
+std::string summary(const S::ModalResult& r);
+std::string details(const S::ModalResult& r);
+std::string summary(const S::TimeFunction& f);
+std::string details(const S::TimeFunction& f);
+std::string summary(const S::GroundMotion& g);
+std::string details(const S::GroundMotion& g);
+std::string summary(const S::TimeHistoryResult& r);
+std::string details(const S::TimeHistoryResult& r);
+std::string summary(const S::ResponseSpectrum& s);
+std::string details(const S::ResponseSpectrum& s);
+std::string summary(const S::SpectralResult& r);
+std::string details(const S::SpectralResult& r);
+std::string summary(const S::Vehicle& v);
+std::string details(const S::Vehicle& v);
+std::string summary(const S::MovingLoadResult& r);
+std::string details(const S::MovingLoadResult& r);
 /// Description d'une charge d'élément (« répartie y local de 0 à L : −15 → −15 kN/m »).
 std::string describe(const S::ElementLoad& l);
 
@@ -167,6 +194,14 @@ using ReducedObject = ValueObject<ReducedData, Type::Reduced>;
 using ResultObject = ValueObject<S::AnalysisResult2D, Type::Result>;
 using DiagramObject = ValueObject<DiagramData, Type::Diagram>;
 using CurveObject = ValueObject<CurveData, Type::Curve>;
+using ModalObject = ValueObject<S::ModalResult, Type::Modal>;
+using TimeFunctionObject = ValueObject<S::TimeFunction, Type::TimeFunction>;
+using GroundMotionObject = ValueObject<S::GroundMotion, Type::GroundMotion>;
+using TimeHistoryObject = ValueObject<S::TimeHistoryResult, Type::TimeHistory>;
+using SpectrumObject = ValueObject<S::ResponseSpectrum, Type::Spectrum>;
+using SpectralObject = ValueObject<S::SpectralResult, Type::Spectral>;
+using VehicleObject = ValueObject<S::Vehicle, Type::Vehicle>;
+using MovingLoadObject = ValueObject<S::MovingLoadResult, Type::MovingLoad>;
 
 template <typename O, typename T>
 ObjectRef make(T value)

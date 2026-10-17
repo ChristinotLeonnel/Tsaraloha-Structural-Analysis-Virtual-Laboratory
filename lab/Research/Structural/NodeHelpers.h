@@ -22,6 +22,8 @@ inline constexpr char kElement[] = "Structure B — Élément fini";
 inline constexpr char kAssembly[] = "Structure C — Assemblage";
 inline constexpr char kMath[] = "Structure D — Mathématiques";
 inline constexpr char kControl[] = "Structure E — Contrôle et affichage";
+inline constexpr char kDynamics[] = "Structure F — Dynamique (pédagogique)";
+inline constexpr char kMoving[] = "Structure G — Charges roulantes";
 inline constexpr char kExperimental[] = "Expérimental — laboratoire de l'étudiant";
 
 // Implémentations (documentation des blocs : « Code source »)
@@ -29,6 +31,8 @@ inline constexpr char kSrcFrame2D[] = "TSALab/science/src/structural/Frame2D.cpp
 inline constexpr char kSrcElement[] = "TSALab/science/src/structural/FrameElement2D.cpp";
 inline constexpr char kSrcStiffness[] = "TSALab/science/src/structural/DirectStiffness2D.cpp";
 inline constexpr char kSrcLinAlg[] = "TSALab/science/src/LinearAlgebra.cpp";
+inline constexpr char kSrcDynamics[] = "TSALab/science/src/structural/Dynamics2D.cpp";
+inline constexpr char kSrcMoving[] = "TSALab/science/src/structural/MovingLoads2D.cpp";
 
 PinSpec execIn();
 PinSpec execOut(const char* name = "then", const char* label = "");
@@ -45,6 +49,13 @@ NodeDefinition pureBlock(const char* id, const char* title, const char* category
 /// Bloc d'action (broches d'exécution ajoutées), composant validé.
 NodeDefinition actionBlock(const char* id, const char* title, const char* category, const char* description, std::vector<PinSpec> inputs,
                            std::vector<PinSpec> outputs, std::string documentation, const char* source);
+
+/// Définition dont la version du type de nœud change (broches ajoutées, compatibles avec les fichiers antérieurs).
+inline NodeDefinition versioned(NodeDefinition d, int version)
+{
+    d.version = version;
+    return d;
+}
 
 /// « y local », « ly », « perpendiculaire », « x local », « axial », « X global », « gx », « Y global », « gy », « vertical ».
 bool parseDirection(const std::string& text, S::LoadDirection& out);
@@ -79,5 +90,7 @@ void registerElementNodes(NodeLibrary& lib);
 void registerAssemblyNodes(NodeLibrary& lib);
 void registerMathNodes(NodeLibrary& lib);
 void registerControlNodes(NodeLibrary& lib);
+void registerDynamicsNodes(NodeLibrary& lib);
+void registerMovingLoadNodes(NodeLibrary& lib);
 
 } // namespace TSALab::Research::Structural::detail

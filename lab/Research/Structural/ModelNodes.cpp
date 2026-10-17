@@ -3,6 +3,7 @@
 
 #include "NodeHelpers.h"
 #include "StructuralModels.h"
+#include "TsaImport.h"
 
 #include <cmath>
 
@@ -71,31 +72,38 @@ void registerModelNodes(NodeLibrary& lib)
                 return true;
             });
 
-    lib.add(pureBlock("struct.material", "Material", kModel, "Matériau élastique linéaire : module d'Young, dilatation thermique, poids volumique.",
-                      { data("name", "Nom", VT::Text, std::string("Acier")), data("E", "E (kN/m²)", VT::Real, 2.1e8),
-                        data("alpha", "α (1/°C)", VT::Real, 1.2e-5), data("gamma", "γ (kN/m³)", VT::Real, 78.5) },
-                      { object("material", "Matériau", Type::Material) },
-                      std::string("E en kN/m² (210 GPa = 2,1e8 kN/m²) ; α sert aux actions thermiques ; γ au poids propre (γ·A, kN/m).\n"
-                                  "Contrôle : E > 0 (vérifié à la création de l'élément).\n")
-                          + kUnits,
-                      kSrcFrame2D),
+    lib.add(versioned(pureBlock("struct.material", "Material", kModel,
+                                "Matériau élastique linéaire : module d'Young, dilatation thermique, poids volumique, masse volumique.",
+                                { data("name", "Nom", VT::Text, std::string("Acier")), data("E", "E (kN/m²)", VT::Real, 2.1e8),
+                                  data("alpha", "α (1/°C)", VT::Real, 1.2e-5), data("gamma", "γ (kN/m³)", VT::Real, 78.5),
+                                  data("rho", "ρ (t/m³)", VT::Real, 0.0) },
+                                { object("material", "Matériau", Type::Material) },
+                                std::string("E en kN/m² (210 GPa = 2,1e8 kN/m²) ; α sert aux actions thermiques ; γ au poids propre (γ·A, kN/m) ; ρ "
+                                            "(t/m³) à la masse des éléments en dynamique (m̄ = ρ·A, t/m) — 0 : élément sans masse.\n"
+                                            "Contrôle : E > 0 (vérifié à la création de l'élément), α, γ, ρ positifs ou nuls.\n"
+                                            "Version 2 : entrée ρ ajoutée (0 par défaut, graphes antérieurs inchangés).\n")
+                                    + kUnits,
+                                kSrcFrame2D),
+                      2),
             [](ExecutionContext& c) {
-                S::Material m { c.text("name"), c.real("E"), c.real("alpha"), c.real("gamma") };
+                S::Material m { c.text("name"), c.real("E"), c.real("alpha"), c.real("gamma"), c.real("rho") };
                 if (c.failed()) return false;
                 if (!(m.E > 0.0)) return c.fail("module d'Young E non positif");
-                if (m.alpha < 0.0 || m.unitWeight < 0.0) return c.fail("α et γ doivent être positifs ou nuls");
+                if (m.alpha < 0.0 || m.unitWeight < 0.0 || m.density < 0.0) return c.fail("α, γ et ρ doivent être positifs ou nuls");
                 c.setOutput("material", make<MaterialObject>(m));
                 return true;
             });
 
-    lib.add(pureBlock("struct.material_catalog", "Matériau du catalogue", kModel,
-                      "Matériau du catalogue de TSA (S235, S355, C25/30, C30/37, C24) converti en kN/m², 1/°C et kN/m³.",
-                      { data("name", "Matériau", VT::Text, std::string("S235")) },
-                      { object("material", "Matériau", Type::Material), data("E", "E (kN/m²)", VT::Real), data("alpha", "α (1/°C)", VT::Real),
-                        data("gamma", "γ (kN/m³)", VT::Real) },
-                      "Valeurs du catalogue de TSA (Model/Material) : E (Pa → kN/m²), α, γ = ρ·g avec g = 9,81 m/s² (valeur du poids propre "
-                      "des calculs de TSA). Un nom inconnu est refusé.",
-                      "TSALab/lab/Research/Structural/StructuralModels.cpp"),
+    lib.add(versioned(pureBlock("struct.material_catalog", "Matériau du catalogue", kModel,
+                                "Matériau du catalogue de TSA (S235, S355, C25/30, C30/37, C24) converti en kN/m², 1/°C, kN/m³ et t/m³.",
+                                { data("name", "Matériau", VT::Text, std::string("S235")) },
+                                { object("material", "Matériau", Type::Material), data("E", "E (kN/m²)", VT::Real), data("alpha", "α (1/°C)", VT::Real),
+                                  data("gamma", "γ (kN/m³)", VT::Real), data("rho", "ρ (t/m³)", VT::Real) },
+                                "Valeurs du catalogue de TSA (Model/Material) : E (Pa → kN/m²), α, γ = ρ·g avec g = 9,81 m/s² (valeur du poids propre "
+                                "des calculs de TSA), ρ (kg/m³ → t/m³, masse des éléments en dynamique). Un nom inconnu est refusé. Version 2 : "
+                                "sortie ρ ajoutée.",
+                                "TSALab/lab/Research/Structural/StructuralModels.cpp"),
+                      2),
             [](ExecutionContext& c) {
                 S::Material m;
                 std::string error;
@@ -106,6 +114,7 @@ void registerModelNodes(NodeLibrary& lib)
                 c.setOutput("E", m.E);
                 c.setOutput("alpha", m.alpha);
                 c.setOutput("gamma", m.unitWeight);
+                c.setOutput("rho", m.density);
                 return true;
             });
 
@@ -162,12 +171,36 @@ void registerModelNodes(NodeLibrary& lib)
                 return true;
             });
 
+    lib.add(pureBlock("struct.elastic_support", "Appui élastique", kModel,
+                      "Appui d'un nœud avec ressorts (repère global) : rigidités kx, ky (kN/m), kθ (kN·m/rad), DDL bloqués facultatifs.",
+                      { data("node", "Nœud", VT::Integer, 1LL), data("kx", "kx (kN/m)", VT::Real, 0.0), data("ky", "ky (kN/m)", VT::Real, 0.0),
+                        data("kr", "kθ (kN·m/rad)", VT::Real, 0.0), data("ux", "ux bloqué", VT::Bool, false), data("uy", "uy bloqué", VT::Bool, false),
+                        data("rz", "θz bloqué", VT::Bool, false) },
+                      { object("support", "Appui", Type::Support) },
+                      "Un ressort agit sur un DDL libre : sa rigidité s'ajoute à la diagonale de K (K = Σ A_eᵀ·k_e·A_e + K_ressorts) et il exerce "
+                      "sur la structure la force −k·u (réaction de l'appui élastique, comprise dans le bilan d'équilibre). Un ressort sur un DDL "
+                      "bloqué est sans effet (signalé par « Valider le modèle »). Refus : rigidité négative ou non finie, appui sans DDL bloqué "
+                      "ni ressort. Aucune rigidité n'est ajoutée automatiquement : un système singulier reste diagnostiqué comme tel.",
+                      kSrcStiffness),
+            [](ExecutionContext& c) {
+                const long long node = c.integer("node");
+                S::SupportCondition s { static_cast<int>(node), c.boolean("ux"), c.boolean("uy"), c.boolean("rz"), c.real("kx"), c.real("ky"), c.real("kr") };
+                if (c.failed()) return false;
+                if (node <= 0) return c.fail("nœud d'appui invalide");
+                for (double k : { s.kUx, s.kUy, s.kRz })
+                    if (!std::isfinite(k) || k < 0.0) return c.fail("rigidité de ressort négative ou non finie");
+                if (!s.hasSpring() && !s.fixUx && !s.fixUy && !s.fixRz) return c.fail("appui sans DDL bloqué ni ressort");
+                c.setOutput("support", make<SupportObject>(s));
+                return true;
+            });
+
     // --- Classe FrameElement2D -------------------------------------------------------------------
-    lib.add(pureBlock("struct.frame_element", "FrameElement2D", kModel,
-                      "Classe d'élément filaire 2D à 6 DDL (portique plan) : créée depuis deux nœuds, un matériau et une section ; rend ses "
-                      "matrices.",
+    lib.add(versioned(pureBlock("struct.frame_element", "FrameElement2D", kModel,
+                      "Classe d'élément filaire 2D à 6 DDL (portique plan) : créée depuis deux nœuds, un matériau et une section, rotules "
+                      "d'extrémité facultatives ; rend ses matrices.",
                       { data("id", "Identifiant", VT::Integer, 1LL), object("node_i", "Nœud i", Type::Node), object("node_j", "Nœud j", Type::Node),
-                        object("material", "Matériau", Type::Material), object("section", "Section", Type::Section), data("name", "Nom", VT::Text, std::string()) },
+                        object("material", "Matériau", Type::Material), object("section", "Section", Type::Section), data("name", "Nom", VT::Text, std::string()),
+                        data("release_i", "Rotule en i", VT::Bool, false), data("release_j", "Rotule en j", VT::Bool, false) },
                       { object("element", "Élément", Type::Element), data("length", "Longueur (m)", VT::Real), data("angle", "Angle (°)", VT::Real),
                         object("k_local", "k' local", Type::Matrix), object("T", "T", Type::Matrix), object("k_global", "k global", Type::Matrix) },
                       "FrameElement2D (Euler-Bernoulli, élastique linéaire, section constante), DDL [ux_i, uy_i, θz_i, ux_j, uy_j, θz_j].\n"
@@ -176,11 +209,19 @@ void registerModelNodes(NodeLibrary& lib)
                       "k' : EA/L (axial), 12EI/L³, 6EI/L², 4EI/L, 2EI/L (flexion).\n"
                       "T : d' = T·d avec, par nœud, [c s 0 ; −s c 0 ; 0 0 1].\n"
                       "k = Tᵀ·k'·T (repère global).\n"
+                      "Rotules d'extrémité (moment nul en i et/ou j) : la rotation propre de l'élément à la rotule découle de la condition "
+                      "M = 0, θ_R = −k'_RR⁻¹·(k'_RO·d'_O + f0'_R) ; rigidité condensée Cᵀ·k'·C (k' rendue ici, lignes des rotations libérées "
+                      "nulles), efforts d'encastrement Cᵀ·(k'·c0 + f0') (qL²/8 côté encastré d'une barre articulée-encastrée), masse "
+                      "cohérente Cᵀ·m'·C. Un nœud dont toutes les barres sont articulées, sans appui ni ressort en rotation, a une rotation "
+                      "sans rigidité : elle est éliminée du système et signalée (treillis articulé).\n"
                       "Fonctions de la classe exposées par les blocs de la catégorie B : géométrie, rigidités, charges équivalentes, "
-                      "déplacements et efforts d'extrémité, diagrammes N, V, M et déformée.",
+                      "déplacements et efforts d'extrémité, diagrammes N, V, M et déformée.\n"
+                      "Version 2 : entrées « Rotule en i », « Rotule en j » ajoutées (sans rotule par défaut, graphes antérieurs inchangés).",
                       kSrcElement),
+                      2),
             [](ExecutionContext& c) {
                 const long long id = c.integer("id");
+                const bool releaseI = c.boolean("release_i"), releaseJ = c.boolean("release_j");
                 const auto ni = c.objectAs<NodeObject>("node_i");
                 const auto nj = c.objectAs<NodeObject>("node_j");
                 const auto mat = c.objectAs<MaterialObject>("material");
@@ -188,7 +229,8 @@ void registerModelNodes(NodeLibrary& lib)
                 const std::string name = c.text("name");
                 if (!ni || !nj || !mat || !sec || c.failed()) return false;
                 if (id <= 0) return c.fail("l'identifiant d'un élément doit être positif");
-                const S::FrameElement2D e(static_cast<int>(id), ni->value(), nj->value(), mat->value(), sec->value(), name);
+                S::FrameElement2D e(static_cast<int>(id), ni->value(), nj->value(), mat->value(), sec->value(), name);
+                e.setReleases(releaseI, releaseJ);
                 const auto issues = e.validate();
                 if (!issues.empty()) return c.fail(issues.front());
                 const auto labels = elementDofLabels(e);
@@ -256,7 +298,7 @@ void registerModelNodes(NodeLibrary& lib)
                     else
                         m.nodes.push_back(*n);
                 }
-                m.elements.push_back({ el.id(), el.nodeI().id, el.nodeJ().id, el.material(), el.section(), el.name() });
+                m.elements.push_back({ el.id(), el.nodeI().id, el.nodeJ().id, el.material(), el.section(), el.name(), el.releaseI(), el.releaseJ() });
                 c.setOutput("model", make<ModelObject>(std::move(m)));
                 return true;
             });
@@ -271,6 +313,29 @@ void registerModelNodes(NodeLibrary& lib)
                 if (!m.node(s->value().node)) return c.fail("appui sur le nœud " + std::to_string(s->value().node) + " absent du modèle");
                 if (m.support(s->value().node)) return c.fail("le nœud " + std::to_string(s->value().node) + " a déjà un appui");
                 m.supports.push_back(s->value());
+                c.setOutput("model", make<ModelObject>(std::move(m)));
+                return true;
+            });
+
+    lib.add(pureBlock("struct.model_add_mass", "Ajouter une masse nodale", kModel,
+                      "Ajoute une masse concentrée en un nœud (dynamique) : translations mx, my (t), inertie de rotation jz (t·m²).",
+                      { object("model", "Modèle", Type::Model), data("node", "Nœud", VT::Integer, 1LL), data("mx", "mx (t)", VT::Real, 0.0),
+                        data("my", "my (t)", VT::Real, 0.0), data("jz", "jz (t·m²)", VT::Real, 0.0) },
+                      { object("model", "Modèle", Type::Model) },
+                      "Masse ajoutée à la diagonale de la matrice de masse M (en plus de la masse ρ·A des éléments). 1 t = 1 kN·s²/m : unités "
+                      "cohérentes avec kN, m, s. Une masse portée par un DDL bloqué suit l'appui et reste sans effet (signalé par l'analyse). "
+                      "Refus : nœud absent, masse négative ou non finie, masse entièrement nulle.",
+                      kSrcDynamics),
+            [](ExecutionContext& c) {
+                S::Model2D m;
+                const long long node = c.integer("node");
+                const S::NodalMass mass { static_cast<int>(node), c.real("mx"), c.real("my"), c.real("jz") };
+                if (!withModel(c, m) || c.failed()) return false;
+                if (!m.node(mass.node)) return c.fail("masse au nœud " + std::to_string(node) + " absent du modèle");
+                for (double v : { mass.mx, mass.my, mass.jz })
+                    if (!std::isfinite(v) || v < 0.0) return c.fail("masse négative ou non finie");
+                if (mass.mx == 0.0 && mass.my == 0.0 && mass.jz == 0.0) return c.fail("masse nulle");
+                m.nodalMasses.push_back(mass);
                 c.setOutput("model", make<ModelObject>(std::move(m)));
                 return true;
             });
@@ -303,6 +368,41 @@ void registerModelNodes(NodeLibrary& lib)
                 c.setOutput("model", make<ModelObject>(std::move(m)));
                 return true;
             });
+
+    {
+        NodeDefinition def = pureBlock(
+            "struct.model_import_tsa", "Importer un projet TSA", kModel,
+            "Modèle plan importé d'un projet TSA (.tsa) par le chemin d'analyse 2D de TSA, avec rapport (importé, converti, ignoré).",
+            { data("path", "Fichier .tsa", VT::Text, std::string()), data("scope", "Portée plane (vide : plan du modèle)", VT::Text, std::string()) },
+            { object("model", "Modèle", Type::Model), data("report", "Rapport d'import", VT::Text), data("scopes", "Portées disponibles", VT::Text),
+              data("sha256", "Empreinte SHA-256", VT::Text) },
+            "Lecture par TSA (TSAFileReader::readHeader, TSAProjectIO::loadProject) : le fichier n'est jamais écrit, son empreinte SHA-256 est "
+            "contrôlée avant et après. Portée plane : plan du modèle (détecté), axe de grille, niveau ou plan de travail (libellé exact de "
+            "« Portées disponibles »), résolue, extraite et validée par AnalysisManager::prepare pour le moteur 2D de TSA ; conversion par "
+            "Custom2D::buildInput (projection dans le plan, appuis, ressorts, rotules, charges nodales et sur barres, cas, combinaisons, "
+            "poids propre). Barres de treillis : barres bi-articulées (signalé). Refus motivés : fichier absent, non TSA, d'une version plus "
+            "récente, chiffré, portée inconnue ou non calculable en 2D, câbles (non linéaires), modèle obtenu invalide. Traçabilité dans le "
+            "modèle (fichier, empreinte, version, projet, portée, date, correspondance des nœuds et éléments TSA). Le fichier est relu à "
+            "chaque exécution.",
+            "TSALab/lab/Research/Structural/TsaImport.cpp");
+        def.cacheable = false;   // le projet peut changer entre deux exécutions
+        lib.add(def, [](ExecutionContext& c) {
+            const std::string path = c.text("path"), scope = c.text("scope");
+            if (c.failed()) return false;
+            S::Model2D m;
+            TsaImportReport report;
+            const bool ok = importTsaProject(path, { scope }, m, report);
+            std::string scopes;
+            for (const auto& s : report.scopes) scopes += (scopes.empty() ? "" : "\n") + s;
+            c.log(report.message);
+            if (!ok) return c.fail(report.text());
+            c.setOutput("report", report.text());
+            c.setOutput("scopes", scopes);
+            c.setOutput("sha256", report.sha256);
+            c.setOutput("model", make<ModelObject>(std::move(m)));
+            return true;
+        });
+    }
 
     lib.add(pureBlock("struct.model_validate", "Valider le modèle", kModel,
                       "Contrôle des données avant le calcul : erreurs bloquantes et avertissements (le bloc n'échoue pas).",

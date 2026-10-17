@@ -22,6 +22,7 @@ quand c'est pertinent, essai dans l'application réelle. Le détail de départ e
 | Cas FEA-07 : MITC4 contre la référence de Mindlin (appui dur), ordre 2 observé ; écart de FEA-01 expliqué (appui mou) | test 367 (TSA, 146 vérifications), test L13 |
 | Maillage dans TSALab (paramètres, génération Gmsh, affichage, qualité) et coques calculées ; transmission au calcul partagée avec TSA ; faux avertissements des coques supprimés | tests 390 (TSA) et L14 ; TSALab réel (plaque : 576 coques, flèche à 0,059 % de la référence) |
 | TSALab Blueprint — programmation structurelle : classe `FrameElement2D` à 6 DDL, charges nodales, réparties (uniformes à multi-segments, locales ou globales, projetées), ponctuelles (forces, moments), poids propre, thermiques, déformations initiales et déplacements imposés, méthode des déplacements étape par étape (déplacements imposés non nuls, diagnostic des mécanismes et du conditionnement), 104 blocs typés et documentés (validés / expérimentaux), graphe `Methode_Des_Deplacements_2D` ≡ calcul direct, solveur de l'étudiant (mode 2), vues (matrices, diagrammes, portique) ; moteur Blueprint partagé : valeurs objet, réutilisation des résultats, variables, commentaires, copier-coller, fichier v2, documentation et source des nœuds | tests S7 à S16 (analytique, MetDeDeplacement), L15 à L22, 391 (TSA) ; TSALab réel (exécution, matrice K, documentation, mécanisme ; `BLUEPRINT_STRUCTUREL.md`) |
+| Programmation structurelle, suite (17/10/2026) : sous-graphes réutilisables (moteur et éditeur partagés, fichier v3, `.tsbps`, méthode en six sous-graphes), rotules et appuis élastiques, dynamique pédagogique (modal, Newmark, accélérogramme fourni, spectral) et charges roulantes, import d'un projet TSA (calcul, bloc, boîte d'aperçu), persistance JSON du modèle et des résultats, Gauss-Seidel | tests S17 à S22, L19, L23 à L30, 392 et 393 (TSA) ; inventaire `AUDIT_FONCTIONNALITES.md` |
 
 Les briques déjà présentes avant cette mission restent en place, et vérifiées par L4 à L8 et S1 à S6 :
 - Blueprint (programmation visuelle typée, débogueur) ;
@@ -39,7 +40,6 @@ Les briques déjà présentes avant cette mission restent en place, et vérifié
 | P2 | Plusieurs projets ou expériences | onglets de sessions dans `LabMainWindow` (même principe que `AppShell` de TSA : une session par onglet, aucune donnée partagée) | `AutomationServer` : un seul serveur à l'écoute |
 | P2 | Laboratoire matriciel, suite | page dédiée : matrices élémentaires et globale en tableau ou carte de couleurs, comparaison de deux calculs ; exporter les matrices élémentaires de Custom2D (aujourd'hui non exportées) | `Custom2D::Features` ; aucune matrice recalculée par TSALab |
 | P2 | Nœuds Blueprint, suite | enregistrer une expérience, exporter un rapport ; « charger un modèle » et « sélectionner » à concevoir (voir `ARCHITECTURE.md` § 6) | API du registre de commandes |
-| P1 | Programmation structurelle, suite | sous-graphes (blocs composés réutilisables, au-delà des commentaires) ; modèle importé d'un projet TSA (plan d'un portique, par l'adaptateur Custom2D) ; rotules d'extrémité et appuis élastiques dans `FrameElement2D` | moteur Blueprint partagé (définitions de nœuds propres à un graphe) ; `Custom2DAdapter` |
 | P2 | Rapports scientifiques | rapport d'expérience (démarche, hypothèses, équations, données, résultats, provenance) exporté depuis le journal | NDC existante pour la partie calcul |
 | P3 | Nouveaux types d'analyse | flambement linéaire, temporel, spectral : type d'analyse, capacité déclarée, adaptateur OpenSees, cas de validation **avant** exposition dans l'interface | aucune option affichée tant que le chemin de calcul n'est pas vérifié |
 | P2 | Isolation des extensions | les plugins sont des DLL chargées dans le processus de l'application : exécution des extensions dans un processus séparé, ou extensions signées et vérifiées avant chargement | compatibilité avec l'API de plugins existante |
@@ -49,7 +49,8 @@ Les briques déjà présentes avant cette mission restent en place, et vérifié
 ## Limites connues
 
 - **Analyses** : dynamique temporelle, spectrale, pushover, flambement et thermique ne sont déclarées par aucun
-  moteur, donc absentes.
+  moteur d'analyse, donc absentes du gestionnaire d'analyse. Les modules pédagogiques de la programmation structurelle
+  (modal, Newmark, spectral sur des données fournies par l'utilisateur, charges roulantes) en sont distincts.
 - **Maillage** : menu Maillage de base dans TSALab ; le maillage local, les zones, l'import/export et l'inspection
   restent propres à TSA. Pas d'outil de dessin de dalle dans TSALab (dalles par les exemples, l'import `.tsa` ou MCP).
 - **Références analytiques** : deux pour l'instant, la poutre bi-appuyée avec force centrale (Euler-Bernoulli) et la

@@ -3,6 +3,7 @@
 
 #include "NodeHelpers.h"
 
+#include <algorithm>
 #include <cmath>
 #include <sstream>
 
@@ -50,11 +51,13 @@ void registerAssemblyNodes(NodeLibrary& lib)
                 return true;
             });
 
-    lib.add(pureBlock("struct.global_stiffness", "GlobalStiffnessAssembly", kAssembly, "Matrice de rigidité globale K = Σ A_eᵀ·k_e·A_e (n × n).",
+    lib.add(pureBlock("struct.global_stiffness", "GlobalStiffnessAssembly", kAssembly,
+                      "Matrice de rigidité globale K = Σ A_eᵀ·k_e·A_e + K_ressorts (n × n).",
                       { object("model", "Modèle", Type::Model), object("dofs", "DDL", Type::Dofs) }, { object("K", "K", Type::Matrix) },
                       "Assemblage par adressage direct : k_e (= Tᵀ·k'·T) de chaque élément ajoutée aux lignes et colonnes de ses 6 DDL globaux ; "
-                      "résultat identique à la somme Σ A_eᵀ·k_e·A_e (que le graphe « Methode_Des_Deplacements_2D » calcule explicitement). K est "
-                      "symétrique ; singulière tant que les conditions aux limites ne sont pas appliquées. Refus : élément invalide.",
+                      "résultat identique à la somme Σ A_eᵀ·k_e·A_e (que le graphe « Methode_Des_Deplacements_2D » calcule explicitement), à "
+                      "laquelle s'ajoute la rigidité des appuis élastiques (bloc « Rigidité des ressorts »). K est symétrique ; singulière tant "
+                      "que les conditions aux limites ne sont pas appliquées. Refus : élément invalide.",
                       kSrcStiffness),
             [](ExecutionContext& c) {
                 const S::Model2D* m = modelIn(c);
@@ -65,6 +68,26 @@ void registerAssemblyNodes(NodeLibrary& lib)
                 if (!S::assembleStiffness(*m, d->numbering, K, &error)) return c.fail(error);
                 const auto labels = dofLabels(d->numbering);
                 c.setOutput("K", matrixOut(std::move(K), labels, labels, "K"));
+                return true;
+            });
+
+    lib.add(pureBlock("struct.spring_stiffness", "Rigidité des ressorts", kAssembly, "Rigidité des appuis élastiques K_ressorts (n × n, diagonale).",
+                      { object("model", "Modèle", Type::Model), object("dofs", "DDL", Type::Dofs) }, { object("Ks", "K_ressorts", Type::Matrix),
+                        data("count", "Ressorts actifs", VT::Integer) },
+                      "K_ressorts(i, i) = k pour chaque DDL libre muni d'un ressort (appui élastique), 0 ailleurs ; un ressort sur un DDL bloqué "
+                      "est sans effet. À ajouter à Σ A_eᵀ·k_e·A_e : K = Σ A_eᵀ·k_e·A_e + K_ressorts. Le ressort exerce la force −k·u sur la "
+                      "structure.",
+                      kSrcStiffness),
+            [](ExecutionContext& c) {
+                const S::Model2D* m = modelIn(c);
+                const DofSet* d = dofsIn(c);
+                if (!m || !d) return false;
+                Matrix Ks = S::springStiffness(*m, d->numbering);
+                long long count = 0;
+                for (int k = 0; k < Ks.rows; ++k) count += Ks(k, k) > 0.0 ? 1 : 0;
+                const auto labels = dofLabels(d->numbering);
+                c.setOutput("Ks", matrixOut(std::move(Ks), labels, labels, "K_ressorts"));
+                c.setOutput("count", count);
                 return true;
             });
 
@@ -242,8 +265,9 @@ void registerAssemblyNodes(NodeLibrary& lib)
                       { data("balanced", "Équilibré", VT::Bool), data("force_residual", "Écart relatif (forces)", VT::Real),
                         data("moment_residual", "Écart relatif (moment)", VT::Real), data("report", "Bilan", VT::Text) },
                       "ΣFx, ΣFy et ΣM/O (moment par rapport à l'origine) des charges nodales et des charges d'élément (intégrées directement, pas "
-                      "depuis F) et des réactions aux DDL imposés. Écarts rapportés à la plus grande des grandeurs : charges, réactions et, si K, d, "
-                      "F sont reliés, ‖K·d‖ et ‖F‖ (cas sans charge : dilatation libre, tassement).",
+                      "depuis F), des réactions aux DDL imposés et des forces des ressorts −k·u (d requis si le modèle a des appuis élastiques). "
+                      "Écarts rapportés à la plus grande des grandeurs : charges, réactions et, si K, d, F sont reliés, ‖K·d‖ et ‖F‖ (cas sans "
+                      "charge : dilatation libre, tassement).",
                       kSrcStiffness),
             [](ExecutionContext& c) {
                 const S::Model2D* m = modelIn(c);
@@ -253,15 +277,24 @@ void registerAssemblyNodes(NodeLibrary& lib)
                 const double tol = c.real("tolerance");
                 if (!m || !d || !loads || !R || c.failed()) return false;
                 double reference = 0.0;
+                Vector displacements;
+                if (c.hasValue("d"))
+                {
+                    const LabeledVector* dv = vectorIn(c, "d");
+                    if (!dv) return false;
+                    displacements = dv->vector;
+                }
+                const bool springs = std::any_of(m->supports.begin(), m->supports.end(), [](const S::SupportCondition& s) { return s.hasSpring(); });
+                if (springs && displacements.empty())
+                    return c.fail("modèle à appuis élastiques : relier d pour compter les forces des ressorts (−k·u) dans le bilan");
                 if (c.hasValue("K") && c.hasValue("d") && c.hasValue("F"))
                 {
                     const LabeledMatrix* K = matrixIn(c, "K");
-                    const LabeledVector* dv = vectorIn(c, "d");
                     const LabeledVector* F = vectorIn(c, "F");
-                    if (!K || !dv || !F) return false;
-                    reference = S::referenceForce(K->matrix, dv->vector, F->vector);
+                    if (!K || !F) return false;
+                    reference = S::referenceForce(K->matrix, displacements, F->vector);
                 }
-                const auto q = S::checkEquilibrium(*m, d->numbering, d->conditions, *loads, R->vector, reference);
+                const auto q = S::checkEquilibrium(*m, d->numbering, d->conditions, *loads, R->vector, reference, displacements);
                 c.setOutput("balanced", q.balanced(tol));
                 c.setOutput("force_residual", q.relativeForceResidual);
                 c.setOutput("moment_residual", q.relativeMomentResidual);

@@ -432,4 +432,178 @@ std::string details(const CurveData& c)
     return summary(c) + "\n" + table(t, {}, { c.xLabel.empty() ? "x" : c.xLabel, c.yLabel.empty() ? "y" : c.yLabel });
 }
 
+// --- Dynamique (pédagogique) et charges roulantes ------------------------------------------------------
+
+namespace
+{
+/// Tableau limité aux premières et dernières lignes au-delà de `maxRows` (journal lisible).
+std::string longTable(const Matrix& m, const std::vector<std::string>& cols, int maxRows = 400)
+{
+    if (m.rows <= maxRows) return table(m, {}, cols);
+    const int half = maxRows / 2;
+    Matrix head(half, m.cols), tail(half, m.cols);
+    for (int i = 0; i < half; ++i)
+        for (int j = 0; j < m.cols; ++j) head(i, j) = m(i, j), tail(i, j) = m(m.rows - half + i, j);
+    return table(head, {}, cols) + "  … " + std::to_string(m.rows - 2 * half) + " lignes non affichées …\n" + table(tail, {}, {});
+}
+
+Matrix pairsTable(const std::vector<std::pair<double, double>>& pts)
+{
+    Matrix t(static_cast<int>(pts.size()), 2);
+    for (std::size_t k = 0; k < pts.size(); ++k) t(static_cast<int>(k), 0) = pts[k].first, t(static_cast<int>(k), 1) = pts[k].second;
+    return t;
+}
+
+std::string logText(const std::vector<std::string>& log)
+{
+    std::string o;
+    for (const auto& l : log) o += "  " + l + "\n";
+    return o;
+}
+
+/// Déplacements nodaux (3 composantes par nœud) en tableau.
+std::string nodalTable(const S::DofNumbering& dofs, const Vector& v, const std::vector<std::string>& cols)
+{
+    Matrix t(static_cast<int>(dofs.nodeIds.size()), 3);
+    std::vector<std::string> nodes;
+    for (std::size_t p = 0; p < dofs.nodeIds.size(); ++p)
+    {
+        nodes.push_back(nodeName(dofs.nodeIds[p]));
+        for (int c = 0; c < 3; ++c)
+            if (3 * p + static_cast<std::size_t>(c) < v.size()) t(static_cast<int>(p), c) = v[3 * p + static_cast<std::size_t>(c)];
+    }
+    return table(t, nodes, cols);
+}
+} // namespace
+
+std::string summary(const S::ModalResult& r)
+{
+    return r.success ? r.message : "Analyse modale en échec : " + r.message;
+}
+
+std::string details(const S::ModalResult& r)
+{
+    std::string o = summary(r) + "\n" + logText(r.log);
+    if (!r.success) return o;
+    Matrix t(static_cast<int>(r.omega.size()), 6);
+    std::vector<std::string> rows;
+    for (std::size_t k = 0; k < r.omega.size(); ++k)
+    {
+        const int i = static_cast<int>(k);
+        rows.push_back("mode " + std::to_string(k + 1));
+        t(i, 0) = r.omega[k], t(i, 1) = r.frequency[k], t(i, 2) = r.period[k];
+        t(i, 3) = r.effectiveMassX[k], t(i, 4) = r.effectiveMassY[k], t(i, 5) = r.participationX[k];
+    }
+    return o + "\n" + table(t, rows, { "ω (rad/s)", "f (Hz)", "T (s)", "Meff X (t)", "Meff Y (t)", "Γ X" });
+}
+
+std::string summary(const S::TimeFunction& f)
+{
+    if (f.points.empty()) return "Fonction du temps vide";
+    double peak = 0.0;
+    for (const auto& p : f.points) peak = std::max(peak, std::abs(p.second));
+    return "Fonction du temps : " + std::to_string(f.points.size()) + " points de " + num(f.points.front().first) + " à " + num(f.points.back().first)
+           + " s, max |valeur| " + num(peak) + " (nulle hors de l'intervalle)";
+}
+
+std::string details(const S::TimeFunction& f)
+{
+    return summary(f) + "\n" + longTable(pairsTable(f.points), { "t (s)", "valeur" });
+}
+
+std::string summary(const S::GroundMotion& g)
+{
+    double peak = 0.0;
+    for (const auto& p : g.acceleration.points) peak = std::max(peak, std::abs(p.second));
+    return std::string("Mouvement du sol suivant ") + (g.direction == 0 ? "X" : "Y") + " : " + std::to_string(g.acceleration.points.size())
+           + " points, pic |a_g| = " + num(peak) + " m/s² — " + (g.source.empty() ? std::string("source non précisée") : g.source);
+}
+
+std::string details(const S::GroundMotion& g)
+{
+    return summary(g) + "\n" + longTable(pairsTable(g.acceleration.points), { "t (s)", "a_g (m/s²)" });
+}
+
+std::string summary(const S::TimeHistoryResult& r)
+{
+    return r.success ? r.message : "Analyse temporelle en échec : " + r.message;
+}
+
+std::string details(const S::TimeHistoryResult& r)
+{
+    std::string o = summary(r) + "\n" + logText(r.log);
+    if (!r.success) return o;
+    return o + "\nMaxima de |u| sur la durée (relatifs au sol pour un mouvement du sol) :\n"
+           + nodalTable(r.dofs, r.peakAbsDisplacement, { "|ux| (m)", "|uy| (m)", "|θz| (rad)" });
+}
+
+std::string summary(const S::ResponseSpectrum& s)
+{
+    if (s.points.empty()) return "Spectre vide";
+    return "Spectre de réponse : " + std::to_string(s.points.size()) + " points, T de " + num(s.points.front().first) + " à " + num(s.points.back().first)
+           + " s — " + (s.source.empty() ? std::string("fourni par l'utilisateur") : s.source);
+}
+
+std::string details(const S::ResponseSpectrum& s)
+{
+    return summary(s) + "\n" + longTable(pairsTable(s.points), { "T (s)", "Sa (m/s²)" });
+}
+
+std::string summary(const S::SpectralResult& r)
+{
+    return r.success ? r.message : "Analyse spectrale en échec : " + r.message;
+}
+
+std::string details(const S::SpectralResult& r)
+{
+    std::string o = summary(r) + "\n" + logText(r.log);
+    if (!r.success) return o;
+    o += "\nDéplacements de pointe combinés (valeurs absolues) :\n" + nodalTable(r.dofs, r.peakDisplacement, { "ux (m)", "uy (m)", "θz (rad)" });
+    Matrix f(static_cast<int>(r.elementPeaks.size()), 6);
+    std::vector<std::string> els;
+    for (std::size_t e = 0; e < r.elementPeaks.size(); ++e)
+    {
+        els.push_back("E" + std::to_string(r.elementPeaks[e].element));
+        for (int c = 0; c < 6; ++c) f(static_cast<int>(e), c) = r.elementPeaks[e].endForces[static_cast<std::size_t>(c)];
+    }
+    return o + "\nEfforts d'extrémité de pointe combinés (repère local, valeurs absolues) :\n"
+           + table(f, els, { "|Fx i|", "|Fy i|", "|Mz i|", "|Fx j|", "|Fy j|", "|Mz j|" });
+}
+
+std::string summary(const S::Vehicle& v)
+{
+    double total = 0.0;
+    for (const auto& a : v.axles) total += a.load;
+    return "Convoi" + (v.name.empty() ? std::string() : " « " + v.name + " »") + " : " + std::to_string(v.axles.size()) + " essieu(x), longueur "
+           + num(v.length()) + " m, charge totale " + num(total) + " kN (suivant −Y)";
+}
+
+std::string details(const S::Vehicle& v)
+{
+    Matrix t(static_cast<int>(v.axles.size()), 2);
+    for (std::size_t k = 0; k < v.axles.size(); ++k) t(static_cast<int>(k), 0) = v.axles[k].offset, t(static_cast<int>(k), 1) = v.axles[k].load;
+    return summary(v) + "\n" + table(t, {}, { "décalage (m)", "charge (kN)" });
+}
+
+std::string summary(const S::MovingLoadResult& r)
+{
+    return r.success ? r.message : "Charges roulantes en échec : " + r.message;
+}
+
+std::string details(const S::MovingLoadResult& r)
+{
+    std::string o = summary(r) + "\n" + logText(r.log);
+    if (!r.success) return o;
+    Matrix t(static_cast<int>(r.stations.size()), 7);
+    std::vector<std::string> rows;
+    for (std::size_t k = 0; k < r.stations.size(); ++k)
+    {
+        const auto& s = r.stations[k];
+        rows.push_back("E" + std::to_string(s.element));
+        const double v[7] = { s.x, s.Nmin, s.Nmax, s.Vmin, s.Vmax, s.Mmin, s.Mmax };
+        for (int c = 0; c < 7; ++c) t(static_cast<int>(k), c) = v[c];
+    }
+    return o + "\nEnveloppes (kN, kN·m) :\n" + table(t, rows, { "x (m)", "N min", "N max", "V min", "V max", "M min", "M max" });
+}
+
 } // namespace TSALab::Research::Structural

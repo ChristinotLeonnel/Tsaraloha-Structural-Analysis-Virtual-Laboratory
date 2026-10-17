@@ -2,8 +2,11 @@
 
 #include "StructuralGraphs.h"
 
+#include "Blueprint/BlueprintSubgraph.h"
+
 #include <algorithm>
 #include <limits>
+#include <set>
 
 namespace TSALab::Research::StructuralGraphs
 {
@@ -106,7 +109,16 @@ private:
 // =============================================================================================
 // Methode_Des_Deplacements_2D
 // =============================================================================================
-bool buildMethod(Graph& g, std::string* error)
+/// Nœuds des étapes de la méthode (exemple en sous-graphes).
+struct MethodGroups
+{
+    std::set<int> model, assembly, boundary, solve, forces, equilibrium;
+    int portal = 0, loading = 0, numbering = 0, kTotal = 0, fTotal = 0, boundaryConditions = 0;   ///< broches renommées
+};
+
+/// Methode_Des_Deplacements_2D. equilibriumLast : bilan d'équilibre après les efforts internes (exemple en sous-graphes :
+/// une entrée et une sortie d'exécution par étape) ; groups : nœuds de chaque étape.
+bool buildMethodFlat(Graph& g, bool equilibriumLast, MethodGroups* groups, std::string* error)
 {
     g.clear();
     g.name = "Methode_Des_Deplacements_2D";
@@ -198,9 +210,16 @@ bool buildMethod(Graph& g, std::string* error)
             "#0277BD");
 
     // Après la boucle : K et F assemblées
-    const int getK2 = b.getVar("K", 850, 60);
+    // K = Σ A_eᵀ·k_e·A_e + K_ressorts (appuis élastiques ; nulle sans ressort)
+    const int getKe = b.getVar("K", 850, 60);
+    const int springs = b.node("struct.spring_stiffness", 850, 330);
+    b.link(model, "model", springs, "model");
+    b.link(dofs, "dofs", springs, "dofs");
+    const int getK2 = b.node("matrix.add", 1100, 60);
+    b.link(getKe, "value", getK2, "A");
+    b.link(springs, "Ks", getK2, "B");
     const int getF2 = b.getVar("F", 850, 200);
-    const int p3 = b.details("Étape 3 — matrice de rigidité globale K = Σ A_eᵀ·k_e·A_e", getK2, "value", 850, -320);
+    const int p3 = b.details("Étape 3 — matrice de rigidité globale K = Σ A_eᵀ·k_e·A_e + K_ressorts", getK2, "C", 850, -320);
     const int p3b = b.details("Étape 3 — vecteur global des charges F", getF2, "value", 1100, -320);
     b.link(loop1, "completed", p3, "exec");
     b.then(p3, p3b);
@@ -211,7 +230,7 @@ bool buildMethod(Graph& g, std::string* error)
     b.link(dofs, "dofs", bc, "dofs");
     b.link(loads, "loads", bc, "loads");
     const int rs = b.node("struct.reduced_system", 1600, 120);
-    b.link(getK2, "value", rs, "K");
+    b.link(getK2, "C", rs, "K");
     b.link(getF2, "value", rs, "F");
     b.link(bc, "dofs", rs, "dofs");
     const int sol = b.node("struct.solve_displacements", 1850, 120);
@@ -231,7 +250,7 @@ bool buildMethod(Graph& g, std::string* error)
     b.link(sol, "d_f", disp, "d_f");
     b.link(bc, "dofs", disp, "dofs");
     const int reac = b.node("struct.reaction_recovery", 2350, 120);
-    b.link(getK2, "value", reac, "K");
+    b.link(getK2, "C", reac, "K");
     b.link(disp, "d", reac, "d");
     b.link(getF2, "value", reac, "F");
     b.link(bc, "dofs", reac, "dofs");
@@ -240,7 +259,7 @@ bool buildMethod(Graph& g, std::string* error)
     b.link(bc, "dofs", eq, "dofs");
     b.link(loads, "loads", eq, "loads");
     b.link(reac, "R", eq, "R");
-    b.link(getK2, "value", eq, "K");
+    b.link(getK2, "C", eq, "K");
     b.link(disp, "d", eq, "d");
     b.link(getF2, "value", eq, "F");
     const int p6 = b.print("Étape 6 — déplacements nodaux (m, rad) :\n", disp, "table", 2100, -320);
@@ -248,7 +267,7 @@ bool buildMethod(Graph& g, std::string* error)
     const int p7b = b.print("Étape 7 — bilan d'équilibre :\n", eq, "report", 2600, -320);
     b.then(p5, p6);
     b.then(p6, p7);
-    b.then(p7, p7b);
+    if (!equilibriumLast) b.then(p7, p7b);
     b.frame({ disp, reac, eq, p6, p7, p7b }, "Étapes 6 et 7 — Déplacements et réactions\nd = [d_f ; d_c], R = K·d − F, équilibre global des forces et des moments",
             "#558B2F");
 
@@ -264,7 +283,7 @@ bool buildMethod(Graph& g, std::string* error)
     b.link(ed, "d_global", ifd, "d_e");
     b.link(loads, "loads", ifd, "loads");
     const int p8 = b.print("Étape 8 — ", ifd, "diagram", 3100, -320);
-    b.then(p7b, loop2);
+    b.then(equilibriumLast ? p7 : p7b, loop2);
     b.link(loop2, "body", p8, "exec");
     b.frame({ loop2, ed, ifd, p8 }, "Étape 8 — Efforts internes\nPour chaque élément : d_e = A_e·d, f' = k'·T·d_e + f0', diagrammes N, V, M et déformée", "#5D4037");
 
@@ -273,7 +292,7 @@ bool buildMethod(Graph& g, std::string* error)
     b.link(model, "model", res, "model");
     b.link(loads, "loads", res, "loads");
     b.link(bc, "dofs", res, "dofs");
-    b.link(getK2, "value", res, "K");
+    b.link(getK2, "C", res, "K");
     b.link(getF2, "value", res, "F");
     b.link(disp, "d", res, "d");
     const int direct = b.node("struct.solve_direct", 3350, 400);
@@ -289,12 +308,212 @@ bool buildMethod(Graph& g, std::string* error)
     b.link(pScale, "value", show, "scale");
     const int p9 = b.print("Étape 9 — comparaison au calcul direct : ", cmp, "report", 3600, -320);
     const int p9b = b.print("Graphe conforme au calcul direct : ", cmp, "passed", 3850, -320);
-    b.link(loop2, "completed", show, "exec");
+    if (equilibriumLast)
+    {
+        b.link(loop2, "completed", p7b, "exec");
+        b.then(p7b, show);
+    }
+    else
+        b.link(loop2, "completed", show, "exec");
     b.then(show, p9);
     b.then(p9, p9b);
     b.frame({ res, direct, cmp, show, p9, p9b }, "Étape 9 — Visualiser\nmodèle, déformée amplifiée, réactions, diagrammes, équilibre ; comparaison au calcul direct (1e-9)",
             "#E65100");
+    if (groups)
+    {
+        groups->model = { model, valid, loads, p1, p1b };
+        groups->assembly = { dofs, zeros, fnodal, setK0, setF0, loop1, kl, T, kg, Ae, getK, AkA, sumK, feq, AeT, AtF, getF, sumF, setK, setF,
+                             getKe, springs, getK2, getF2, p3, p3b };
+        groups->boundary = { bc, rs, p4 };
+        groups->solve = { sol, p5, disp, p6 };
+        groups->forces = { reac, p7, loop2, ed, ifd, p8 };
+        groups->equilibrium = { eq, p7b };
+        groups->portal = model, groups->loading = loads, groups->numbering = dofs;
+        groups->kTotal = getK2, groups->fTotal = getF2, groups->boundaryConditions = bc;
+        // Concaténations des affichages (Builder::print) : dans l'étape de leur affichage
+        for (auto* set : { &groups->model, &groups->assembly, &groups->boundary, &groups->solve, &groups->forces, &groups->equilibrium })
+            for (int id : std::set<int>(*set))
+                if (const auto l = g.linkTo(id, "value"); l && g.node(l->fromNode) && g.node(l->fromNode)->type == "text.concat") set->insert(l->fromNode);
+    }
     return b.ok(error);
+}
+
+bool buildMethod(Graph& g, std::string* error)
+{
+    return buildMethodFlat(g, false, nullptr, error);
+}
+
+/// Renomme la broche d'un sous-graphe encapsulé reliée, dans son corps, à la broche intérieure (nœud, broche) : entrée
+/// qui alimente cette entrée intérieure, ou sortie alimentée par cette sortie intérieure. Corps et instances de g mis à
+/// jour (construction de l'exemple : la définition reste en version 1).
+bool renameSubgraphPin(Graph& g, const std::string& id, bool input, int innerNode, const std::string& innerPin, const std::string& name,
+                       const std::string& label, std::string* error)
+{
+    auto it = std::find_if(g.subgraphs.begin(), g.subgraphs.end(), [&](const SubgraphDefinition& d) { return d.id == id; });
+    if (it == g.subgraphs.end() || !it->body)
+    {
+        if (error) *error = "sous-graphe « " + id + " » introuvable";
+        return false;
+    }
+    const std::string endType = input ? subgraphInputType(id) : subgraphOutputType(id);
+    auto body = std::make_shared<Graph>(*it->body);
+    std::string old;
+    for (const auto& l : body->links())
+    {
+        const NodeInstance* a = body->node(l.fromNode);
+        const NodeInstance* b = body->node(l.toNode);
+        if (input && a && a->type == endType && l.toNode == innerNode && l.toPin == innerPin) old = l.fromPin;
+        if (!input && b && b->type == endType && l.fromNode == innerNode && l.fromPin == innerPin) old = l.toPin;
+    }
+    if (old.empty())
+    {
+        if (error) *error = "sous-graphe « " + id + " » : aucune broche reliée à #" + std::to_string(innerNode) + "." + innerPin;
+        return false;
+    }
+    for (const auto& l : std::vector<Link>(body->links()))
+    {
+        const NodeInstance* a = body->node(l.fromNode);
+        const NodeInstance* b = body->node(l.toNode);
+        if (input && a && a->type == endType && l.fromPin == old)
+        {
+            body->removeLink(l);
+            body->addLink({ l.fromNode, name, l.toNode, l.toPin });
+        }
+        if (!input && b && b->type == endType && l.toPin == old)
+        {
+            body->removeLink(l);
+            body->addLink({ l.fromNode, l.fromPin, l.toNode, name });
+        }
+    }
+    for (auto& pin : input ? it->inputs : it->outputs)
+        if (pin.name == old)
+        {
+            pin.name = name;
+            pin.label = label;
+        }
+    it->body = body;
+    for (int inst : subgraphInstances(g, id))
+        for (const auto& l : std::vector<Link>(g.links()))
+        {
+            if (input && l.toNode == inst && l.toPin == old)
+            {
+                g.removeLink(l);
+                g.addLink({ l.fromNode, l.fromPin, inst, name });
+            }
+            if (!input && l.fromNode == inst && l.fromPin == old)
+            {
+                g.removeLink(l);
+                g.addLink({ inst, name, l.toNode, l.toPin });
+            }
+        }
+    return true;
+}
+
+// =============================================================================================
+// Methode_Des_Deplacements_2D en sous-graphes
+// =============================================================================================
+bool buildMethodSubgraphs(Graph& g, std::string* error)
+{
+    MethodGroups groups;
+    if (!buildMethodFlat(g, true, &groups, error)) return false;
+    g.name = "Methode_Des_Deplacements_2D_Sous_Graphes";
+    g.description = "La méthode des déplacements découpée en six sous-graphes réutilisables, obtenus en encapsulant les étapes du graphe pas à "
+                    "pas : construire le modèle, assembler K et F, conditions aux limites, résoudre les déplacements, réactions et efforts "
+                    "internes, vérifier l'équilibre. Double-cliquer une instance pour ouvrir son corps. Résultat identique au graphe pas à pas "
+                    "et au calcul direct.";
+    const NodeLibrary& lib = NodeLibrary::standard();
+    struct Step
+    {
+        std::set<int> nodes;
+        const char* id;
+        const char* name;
+        const char* description;
+        const char* documentation;
+    };
+    const Step steps[] = {
+        { groups.model, "construire_modele", "Construire le modèle", "Portique de démonstration, contrôle des données, cas de charge.",
+          "Étape 1. Portique de démonstration (struct.model_demo_portal) : nœuds, éléments, matériaux, sections, appuis ; contrôle des "
+          "données (struct.model_validate) ; cas de charge ou combinaison (struct.loading).\nEntrées : q (kN/m), H (kN), cas (1 G, 2 W, "
+          "3 tassement), combinaison (0 : aucune). Sorties : modèle, charges." },
+        { groups.assembly, "assembler_k_f", "Assembler K et F", "K = Σ A_eᵀ·k_e·A_e + K_ressorts et F, dans une boucle sur les éléments.",
+          "Étapes 2 et 3. Numérotation des DDL (ux, uy, θz par nœud) ; pour chaque élément : k' et T, k = Tᵀ·k'·T, opérateur "
+          "d'assemblage A_e, charges équivalentes f_eq ; K ← K + A_eᵀ·k·A_e et F ← F + A_eᵀ·f_eq (K nulle et F = charges nodales au "
+          "départ) ; K_ressorts ajoutée après la boucle. Les variables K et F sont internes au corps (exécution imbriquée) : elles "
+          "sortent par les broches K et F.\nUnités : kN, m, rad." },
+        { groups.boundary, "conditions_limites", "Conditions aux limites", "Partition DDL libres / imposés, système réduit.",
+          "Étape 4. Partition des DDL libres et imposés (appuis, déplacements imposés) ; système réduit K_ff·d_f = F_f − K_fc·d_c." },
+        { groups.solve, "resoudre_deplacements", "Résoudre les déplacements", "Cholesky, diagnostic des mécanismes, d = [d_f ; d_c].",
+          "Étapes 5 et 6. Résolution de K_ff·d_f = F_f − K_fc·d_c par Cholesky (aucune inverse explicite ; système singulier : "
+          "diagnostic du mécanisme, jamais de rigidité ajoutée) ; vecteur complet d = [d_f ; d_c] (m, rad)." },
+        { groups.forces, "reactions_efforts", "Réactions et efforts internes", "R = K·d − F ; d_e = A_e·d, diagrammes N, V, M.",
+          "Étapes 7 et 8. Réactions R = K·d − F (kN, kN·m) ; pour chaque élément : d_e = A_e·d, f' = k'·T·d_e + f0', diagrammes N, V, M "
+          "et déformée." },
+        { groups.equilibrium, "verifier_equilibre", "Vérifier l'équilibre", "Équilibre global des forces et des moments.",
+          "Étape 7 (bilan). Équilibre global : charges, réactions et forces des ressorts ; résidu relatif rapporté à la plus grande force "
+          "(K·d ou F)." },
+    };
+    std::map<std::string, int> instances;
+    for (const auto& st : steps)
+    {
+        const EncapsulationResult r = encapsulate(lib, g, st.nodes, st.id, st.name);
+        if (!r.ok)
+        {
+            if (error) *error = std::string("encapsulation « ") + st.name + " » : " + r.message;
+            return false;
+        }
+        instances[st.id] = r.instance;
+        auto& d = g.subgraphs.back();
+        d.description = st.description;
+        d.documentation = st.documentation;
+        d.category = "Méthode des déplacements (sous-graphes)";
+        // Interfaces lisibles (noms tirés des broches intérieures à l'encapsulation)
+        std::string renameError;
+        auto rename = [&](bool input, int node, const char* pin, const char* name, const char* label) {
+            std::string why;
+            if (!renameSubgraphPin(g, st.id, input, node, pin, name, label, &why) && renameError.empty()) renameError = why;
+        };
+        const std::string sid = st.id;
+        if (sid == "construire_modele")
+        {
+            rename(true, groups.portal, "q", "q", "q (kN/m)");
+            rename(true, groups.portal, "H", "H", "H (kN)");
+            rename(true, groups.loading, "case", "cas", "Cas");
+            rename(true, groups.loading, "combination", "combinaison", "Combinaison");
+        }
+        else if (sid == "assembler_k_f")
+        {
+            rename(false, groups.numbering, "dofs", "numerotation", "Numérotation des DDL");
+            rename(false, groups.kTotal, "C", "K", "K (globale)");
+            rename(false, groups.fTotal, "value", "F", "F (charges)");
+        }
+        else if (sid == "conditions_limites")
+            rename(false, groups.boundaryConditions, "dofs", "ddl", "DDL et conditions aux limites");
+        if (!renameError.empty())
+        {
+            if (error) *error = renameError;
+            return false;
+        }
+    }
+    // Cadres : les étapes 1 à 8 sont devenues des instances ; un cadre les présente
+    for (const auto& [id, c] : std::map<int, Comment>(g.comments()))
+        if (c.text.rfind("Étape", 0) == 0 && c.text.rfind("Étape 9", 0) != 0) g.removeComment(id);
+    double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+    for (const auto& [id, inst] : instances)
+        if (const NodeInstance* n = g.node(inst))
+            x0 = std::min(x0, n->x), y0 = std::min(y0, n->y), x1 = std::max(x1, n->x + 200.0), y1 = std::max(y1, n->y + 200.0);
+    Comment frame;
+    frame.x = x0 - 40.0, frame.y = y0 - 80.0, frame.width = x1 - x0 + 80.0, frame.height = y1 - y0 + 120.0;
+    frame.text = "Étapes 1 à 8 — six sous-graphes\ndouble-cliquer une instance pour ouvrir son corps ; « Retour au graphe parent » enregistre "
+                 "une nouvelle version et met à jour les instances";
+    frame.color = "#00897B";   // distinct de l'en-tête des instances (#00695C)
+    g.addComment(frame);
+    std::unique_ptr<NodeLibrary> holder;
+    if (const auto issues = lib.forGraph(g, holder).validate(g); !issues.empty())
+    {
+        if (error) *error = "exemple en sous-graphes invalide : " + issues.front().message;
+        return false;
+    }
+    return true;
 }
 
 // =============================================================================================
@@ -690,6 +909,359 @@ bool buildSettlement(Graph& g, std::string* error)
     b.frame({ mat, sec, ei, num, refAbs, ref, cmp }, "Référence analytique\nR = −6·E·I·Δ / L³ (poutre continue, travées égales L)", "#558B2F");
     return b.ok(error);
 }
+
+// =============================================================================================
+// Exemples des nouveaux modules : rotules et ressorts, dynamique (pédagogique), charges roulantes
+// =============================================================================================
+
+/// Poteau encastré de hauteur 4 m (IPE 300, matériau sans masse) portant une masse de 10 t en tête suivant X :
+/// oscillateur à 1 DDL de rigidité 3EI/H³ (rotation et translation verticale de tête sans masse, condensées).
+struct SdofBlocks
+{
+    int model = 0, mat = 0, sec = 0;
+};
+
+SdofBlocks sdofModel(Builder& b, double x, double y)
+{
+    SdofBlocks s;
+    s.mat = b.node("struct.material", x, y);
+    b.value(s.mat, "name", std::string("acier sans masse"));
+    b.value(s.mat, "E", 2.1e8);   // ρ = 0 (valeur par défaut) : poteau sans masse
+    s.sec = b.node("struct.section_catalog", x, y + 200);
+    const int n1 = b.node("struct.node", x + 250, y);
+    b.value(n1, "id", 1LL);
+    const int n2 = b.node("struct.node", x + 250, y + 150);
+    b.value(n2, "id", 2LL);
+    b.value(n2, "y", 4.0);
+    const int el = b.node("struct.frame_element", x + 500, y);
+    b.link(n1, "node", el, "node_i");
+    b.link(n2, "node", el, "node_j");
+    b.link(s.mat, "material", el, "material");
+    b.link(s.sec, "section", el, "section");
+    const int empty = b.node("struct.model_empty", x + 500, y + 300);
+    b.value(empty, "name", std::string("oscillateur à 1 DDL"));
+    const int addEl = b.node("struct.model_add_element", x + 750, y);
+    b.link(empty, "model", addEl, "model");
+    b.link(el, "element", addEl, "element");
+    const int sup = b.node("struct.support", x + 750, y + 200);
+    b.value(sup, "node", 1LL);
+    b.value(sup, "rz", true);
+    const int addSup = b.node("struct.model_add_support", x + 1000, y);
+    b.link(addEl, "model", addSup, "model");
+    b.link(sup, "support", addSup, "support");
+    const int mass = b.node("struct.model_add_mass", x + 1250, y);
+    b.link(addSup, "model", mass, "model");
+    b.value(mass, "node", 2LL);
+    b.value(mass, "mx", 10.0);
+    s.model = mass;
+    b.frame({ s.mat, s.sec, n1, n2, el, empty, addEl, sup, addSup, mass },
+            "Oscillateur à 1 DDL\npoteau encastré H = 4 m (IPE 300, ρ = 0), masse de 10 t en tête suivant X : k = 3EI/H³", "#00796B");
+    return s;
+}
+
+bool buildHingesSprings(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Rotule et appui élastique (poutre Gerber)";
+    g.description = "Console de 4 m encastrée en N1, rotule en N2 (élément 1 articulé en j), travée suspendue de 6 m posée sur un appui "
+                    "élastique ky = 5000 kN/m en N3, charge uniforme de 10 kN/m : structure isostatique, réactions et flèche de l'appui "
+                    "élastique comparées aux valeurs de la statique (R1 = 70 kN, M1 = 200 kN·m, uy3 = −30/5000 m).";
+    Builder b(g, NodeLibrary::standard());
+    const int mat = b.node("struct.material_catalog", -1500, 0);
+    const int sec = b.node("struct.section_catalog", -1500, 200);
+    const int n1 = b.node("struct.node", -1250, 0), n2 = b.node("struct.node", -1250, 150), n3 = b.node("struct.node", -1250, 300);
+    b.value(n1, "id", 1LL);
+    b.value(n2, "id", 2LL);
+    b.value(n2, "x", 4.0);
+    b.value(n3, "id", 3LL);
+    b.value(n3, "x", 10.0);
+    const int e1 = b.node("struct.frame_element", -1000, 0), e2 = b.node("struct.frame_element", -1000, 300);
+    b.value(e1, "id", 1LL);
+    b.value(e1, "release_j", true);
+    b.value(e2, "id", 2LL);
+    b.link(n1, "node", e1, "node_i");
+    b.link(n2, "node", e1, "node_j");
+    b.link(n2, "node", e2, "node_i");
+    b.link(n3, "node", e2, "node_j");
+    for (int e : { e1, e2 })
+    {
+        b.link(mat, "material", e, "material");
+        b.link(sec, "section", e, "section");
+    }
+    const int empty = b.node("struct.model_empty", -750, 450);
+    b.value(empty, "name", std::string("poutre Gerber"));
+    const int add1 = b.node("struct.model_add_element", -750, 0);
+    b.link(empty, "model", add1, "model");
+    b.link(e1, "element", add1, "element");
+    const int add2 = b.node("struct.model_add_element", -500, 0);
+    b.link(add1, "model", add2, "model");
+    b.link(e2, "element", add2, "element");
+    const int fix = b.node("struct.support", -500, 200);
+    b.value(fix, "node", 1LL);
+    b.value(fix, "rz", true);
+    const int spring = b.node("struct.elastic_support", -500, 400);
+    b.value(spring, "node", 3LL);
+    b.value(spring, "ky", 5000.0);
+    const int addFix = b.node("struct.model_add_support", -250, 0);
+    b.link(add2, "model", addFix, "model");
+    b.link(fix, "support", addFix, "support");
+    const int addSpring = b.node("struct.model_add_support", 0, 0);
+    b.link(addFix, "model", addSpring, "model");
+    b.link(spring, "support", addSpring, "support");
+    const int q1 = b.node("struct.load_uniform", -250, 300), q2 = b.node("struct.load_uniform", -250, 450);
+    b.value(q1, "element", 1LL);
+    b.value(q2, "element", 2LL);
+    const int merge = b.node("struct.load_merge", 0, 350);
+    b.link(q1, "load", merge, "a");
+    b.link(q2, "load", merge, "b");
+    const int lc = b.node("struct.load_case", 250, 350);
+    b.link(merge, "load", lc, "loads");
+    const int addCase = b.node("struct.model_add_case", 250, 0);
+    b.link(addSpring, "model", addCase, "model");
+    b.link(lc, "case", addCase, "case");
+    b.frame({ mat, sec, n1, n2, n3, e1, e2, empty, add1, add2, fix, spring, addFix, addSpring, q1, q2, merge, lc, addCase },
+            "Modèle construit par blocs\nélément 1 articulé en j (rotule en N2), appui élastique ky = 5000 kN/m en N3, q = 10 kN/m", "#00796B");
+
+    const int direct = b.node("struct.solve_direct", 500, 0);
+    b.link(addCase, "model", direct, "model");
+    const int r1 = b.node("struct.result_node", 750, 0), r3 = b.node("struct.result_node", 750, 250);
+    b.link(direct, "result", r1, "result");
+    b.link(direct, "result", r3, "result");
+    b.value(r1, "node", 1LL);
+    b.value(r3, "node", 3LL);
+    auto compare = [&](int src, const char* pin, double ref, double y) {
+        const int c = b.node("struct.compare_values", 1000, y);
+        b.link(src, pin, c, "value");
+        b.value(c, "reference", ref);
+        b.value(c, "rel_tol", 1e-9);
+        return c;
+    };
+    const int cR = compare(r1, "Ry", 70.0, 0), cM = compare(r1, "Mz", 200.0, 200), cU = compare(r3, "uy", -30.0 / 5000.0, 400);
+    b.frame({ direct, r1, r3, cR, cM, cU },
+            "Contrôle par la statique\nR1 = 4q + 3q = 70 kN, M1 = 3q·4 + q·4²/2 = 200 kN·m, travée suspendue : force du ressort qL/2 = 30 kN, uy3 = −30/k",
+            "#558B2F");
+    const int start = b.node("event.start", 500, -350);
+    const int show = b.node("struct.show", 750, -350);
+    b.link(direct, "result", show, "value");
+    b.value(show, "title", std::string("Rotule et appui élastique"));
+    const int p1 = b.print("Réaction R1 conforme (70 kN) : ", cR, "passed", 1000, -350);
+    const int p2 = b.print("Moment d'encastrement conforme (200 kN·m) : ", cM, "passed", 1250, -350);
+    const int p3 = b.print("Flèche de l'appui élastique conforme (−6 mm) : ", cU, "passed", 1500, -350);
+    b.then(start, show);
+    b.then(show, p1);
+    b.then(p1, p2);
+    b.then(p2, p3);
+    return b.ok(error);
+}
+
+bool buildModal(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Analyse modale d'un oscillateur à 1 DDL";
+    g.description = "Poteau encastré sans masse portant une masse en tête : un seul mode de masse non nulle, ω² comparé à 3EI/(mH³) calculé "
+                    "dans le graphe ; masse effective égale à la masse totale.";
+    Builder b(g, NodeLibrary::standard());
+    const SdofBlocks s = sdofModel(b, -1500, 0);
+    const int modal = b.node("struct.modal_analysis", 0, 0);
+    b.link(s.model, "model", modal, "model");
+    b.value(modal, "modes", 0LL);
+    const int shape = b.node("struct.mode_shape", 250, 0);
+    b.link(modal, "modal", shape, "modal");
+    const int w2 = b.node("math.multiply", 500, 0);
+    b.link(shape, "omega", w2, "a");
+    b.link(shape, "omega", w2, "b");
+    const int ei = b.node("math.multiply", 0, 300);   // E·Iz (E du bloc matériau : 2,1e8 kN/m²)
+    b.value(ei, "a", 2.1e8);
+    b.link(s.sec, "Iz", ei, "b");
+    const int k3 = b.node("math.multiply", 250, 300);
+    b.link(ei, "result", k3, "a");
+    b.value(k3, "b", 3.0);
+    const int ref = b.node("math.divide", 500, 300);   // / (m·H³) = 10 × 64
+    b.link(k3, "result", ref, "a");
+    b.value(ref, "b", 640.0);
+    const int cmp = b.node("struct.compare_values", 750, 100);
+    b.link(w2, "result", cmp, "value");
+    b.link(ref, "result", cmp, "reference");
+    b.value(cmp, "rel_tol", 1e-9);
+    const int cm = b.node("struct.compare_values", 750, 350);
+    b.link(shape, "meff_x", cm, "value");
+    b.value(cm, "reference", 10.0);
+    b.value(cm, "rel_tol", 1e-9);
+    b.frame({ modal, shape, w2, ei, k3, ref, cmp, cm }, "Analyse modale et référence\nω² = k/m = 3EI/(mH³) ; masse effective Γ² = m (100 %)", "#558B2F");
+    const int start = b.node("event.start", 0, -350);
+    const int p0 = b.print("", modal, "summary", 250, -350);
+    const int p1 = b.print("ω² conforme à 3EI/(mH³) : ", cmp, "passed", 500, -350);
+    const int p2 = b.print("Masse effective conforme (10 t) : ", cm, "passed", 750, -350);
+    b.then(start, p0);
+    b.then(p0, p1);
+    b.then(p1, p2);
+    return b.ok(error);
+}
+
+bool buildNewmark(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Newmark : charge échelon sur un oscillateur";
+    g.description = "Force de 5 kN appliquée brusquement en tête de l'oscillateur à 1 DDL (fonction échelon), sans amortissement, Newmark "
+                    "β = 1/4, γ = 1/2, Δt = 0,01 s : déplacement de pointe comparé à 2P/k (facteur d'amplification dynamique 2), à "
+                    "l'échantillonnage près (écart ≤ (ωΔt/2)²/2 ≈ 5e-4 en relatif).";
+    Builder b(g, NodeLibrary::standard());
+    const SdofBlocks s = sdofModel(b, -1750, 0);
+    const int load = b.node("struct.load_nodal", -500, 250);
+    b.value(load, "node", 2LL);
+    b.value(load, "fx", 5.0);
+    const int lc = b.node("struct.load_case", -250, 250);
+    b.link(load, "load", lc, "loads");
+    b.value(lc, "name", std::string("échelon"));
+    const int addCase = b.node("struct.model_add_case", -250, 0);
+    b.link(s.model, "model", addCase, "model");
+    b.link(lc, "case", addCase, "case");
+    const int step = b.node("struct.time_function", 0, 250);
+    b.value(step, "points", std::string("0:1 ; 100:1"));
+    const int th = b.node("struct.time_history", 250, 0);
+    b.link(addCase, "model", th, "model");
+    b.link(step, "function", th, "load_function");
+    b.value(th, "case", 1LL);
+    b.value(th, "dt", 0.01);
+    b.value(th, "duration", 2.0);
+    const int curve = b.node("struct.history_curve", 500, 0);
+    b.link(th, "history", curve, "history");
+    b.value(curve, "node", 2LL);
+    const int ei = b.node("math.multiply", 250, 350);
+    b.value(ei, "a", 2.1e8);
+    b.link(s.sec, "Iz", ei, "b");
+    const int k = b.node("math.multiply", 500, 350);   // k = 3EI/64
+    b.link(ei, "result", k, "a");
+    b.value(k, "b", 3.0 / 64.0);
+    const int ref = b.node("math.divide", 750, 350);   // 2P/k
+    b.value(ref, "a", 10.0);
+    b.link(k, "result", ref, "b");
+    const int cmp = b.node("struct.compare_values", 1000, 100);
+    b.link(curve, "max_abs", cmp, "value");
+    b.link(ref, "result", cmp, "reference");
+    b.value(cmp, "rel_tol", 1e-3);
+    b.frame({ load, lc, addCase, step, th, curve, ei, k, ref, cmp },
+            "Charge échelon F(t) = f(t)·F, Newmark (accélération moyenne)\nréponse u(t) = (P/k)(1 − cos ωt) : pointe 2P/k", "#3949AB");
+    const int start = b.node("event.start", 250, -350);
+    const int plot = b.node("struct.show", 500, -350);
+    b.link(curve, "curve", plot, "value");
+    b.value(plot, "title", std::string("Réponse à la charge échelon"));
+    const int p0 = b.print("", th, "summary", 750, -350);
+    const int p1 = b.print("Pointe conforme à 2P/k : ", cmp, "passed", 1000, -350);
+    b.then(start, plot);
+    b.then(plot, p0);
+    b.then(p0, p1);
+    return b.ok(error);
+}
+
+bool buildSpectral(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Analyse spectrale d'un oscillateur";
+    g.description = "Spectre de vérification Sa(T) = 2 + 2T (m/s², saisi) appliqué à l'oscillateur à 1 DDL : effort tranchant à la base "
+                    "comparé à m·Sa(T1), T1 lu dans l'analyse modale.";
+    Builder b(g, NodeLibrary::standard());
+    const SdofBlocks s = sdofModel(b, -1500, 0);
+    const int modal = b.node("struct.modal_analysis", 0, 0);
+    b.link(s.model, "model", modal, "model");
+    const int spec = b.node("struct.response_spectrum", 0, 300);
+    b.value(spec, "points", std::string("0:2 ; 2:6"));
+    b.value(spec, "source", std::string("spectre de vérification (linéaire, non réglementaire)"));
+    const int sp = b.node("struct.spectral_analysis", 250, 0);
+    b.link(modal, "modal", sp, "modal");
+    b.link(spec, "spectrum", sp, "spectrum");
+    const int shape = b.node("struct.mode_shape", 250, 300);
+    b.link(modal, "modal", shape, "modal");
+    const int twoT = b.node("math.multiply", 500, 300);
+    b.link(shape, "period", twoT, "a");
+    b.value(twoT, "b", 2.0);
+    const int sa = b.node("math.add", 750, 300);
+    b.link(twoT, "result", sa, "a");
+    b.value(sa, "b", 2.0);
+    const int ref = b.node("math.multiply", 1000, 300);   // m·Sa
+    b.link(sa, "result", ref, "a");
+    b.value(ref, "b", 10.0);
+    const int cmp = b.node("struct.compare_values", 1250, 100);
+    b.link(sp, "base_shear", cmp, "value");
+    b.link(ref, "result", cmp, "reference");
+    b.value(cmp, "rel_tol", 1e-9);
+    b.frame({ modal, spec, sp, shape, twoT, sa, ref, cmp }, "Analyse spectrale et référence\nV = Γ²·Sa(T1) = m·Sa(T1) pour un seul mode", "#558B2F");
+    const int start = b.node("event.start", 250, -350);
+    const int p0 = b.print("", sp, "summary", 500, -350);
+    const int p1 = b.print("Effort tranchant conforme à m·Sa(T1) : ", cmp, "passed", 750, -350);
+    b.then(start, p0);
+    b.then(p0, p1);
+    return b.ok(error);
+}
+
+bool buildMovingLoads(Graph& g, std::string* error)
+{
+    g.clear();
+    g.name = "Charges roulantes : théorème de Barré";
+    g.description = "Deux essieux de 100 kN distants de 2 m sur une poutre de 10 m sur deux appuis, pas de 0,5 m : moment maximal comparé "
+                    "à 2P(L/2 − a/4)²/L = 405 kN·m (théorème de Barré) ; ligne d'influence du moment à mi-portée (maximum L/4 pour 1 kN). "
+                    "Succession de calculs statiques, sans effet dynamique.";
+    Builder b(g, NodeLibrary::standard());
+    const int mat = b.node("struct.material_catalog", -1250, 0);
+    const int sec = b.node("struct.section_catalog", -1250, 200);
+    const int n1 = b.node("struct.node", -1000, 0), n2 = b.node("struct.node", -1000, 150);
+    b.value(n1, "id", 1LL);
+    b.value(n2, "id", 2LL);
+    b.value(n2, "x", 10.0);
+    const int el = b.node("struct.frame_element", -750, 0);
+    b.link(n1, "node", el, "node_i");
+    b.link(n2, "node", el, "node_j");
+    b.link(mat, "material", el, "material");
+    b.link(sec, "section", el, "section");
+    const int empty = b.node("struct.model_empty", -750, 300);
+    const int add = b.node("struct.model_add_element", -500, 0);
+    b.link(empty, "model", add, "model");
+    b.link(el, "element", add, "element");
+    const int s1 = b.node("struct.support", -500, 200), s2 = b.node("struct.support", -500, 400);
+    b.value(s1, "node", 1LL);
+    b.value(s2, "node", 2LL);
+    b.value(s2, "ux", false);
+    const int a1 = b.node("struct.model_add_support", -250, 0), a2 = b.node("struct.model_add_support", 0, 0);
+    b.link(add, "model", a1, "model");
+    b.link(s1, "support", a1, "support");
+    b.link(a1, "model", a2, "model");
+    b.link(s2, "support", a2, "support");
+    b.frame({ mat, sec, n1, n2, el, empty, add, s1, s2, a1, a2 }, "Poutre de 10 m sur deux appuis\nappui double en N1, appui simple en N2", "#00796B");
+    const int veh = b.node("struct.vehicle", 250, 250);
+    b.value(veh, "axles", std::string("0:100 ; 2:100"));
+    b.value(veh, "name", std::string("deux essieux de 100 kN"));
+    const int ml = b.node("struct.moving_load", 250, 0);
+    b.link(a2, "model", ml, "model");
+    b.link(veh, "vehicle", ml, "vehicle");
+    b.value(ml, "step", 0.5);
+    const int env = b.node("struct.envelope_curve", 500, 0);
+    b.link(ml, "result", env, "result");
+    const int il = b.node("struct.influence_line", 500, 300);
+    b.link(a2, "model", il, "model");
+    b.value(il, "x", 5.0);
+    b.value(il, "step", 0.5);
+    const int c1 = b.node("struct.compare_values", 750, 0);
+    b.link(ml, "m_max", c1, "value");
+    b.value(c1, "reference", 405.0);
+    b.value(c1, "rel_tol", 1e-9);
+    const int c2 = b.node("struct.compare_values", 750, 300);
+    b.link(il, "max", c2, "value");
+    b.value(c2, "reference", 2.5);
+    b.value(c2, "rel_tol", 1e-9);
+    b.frame({ veh, ml, env, il, c1, c2 }, "Convoi, enveloppes, ligne d'influence\nBarré : M max = 2P(L/2 − a/4)²/L ; LI de M(L/2) : maximum L/4", "#3949AB");
+    const int start = b.node("event.start", 250, -350);
+    const int plot = b.node("struct.show", 500, -350);
+    b.link(env, "curve", plot, "value");
+    b.value(plot, "title", std::string("Enveloppe de M (max)"));
+    const int p0 = b.print("", ml, "summary", 750, -350);
+    const int p1 = b.print("Moment maximal conforme au théorème de Barré (405 kN·m) : ", c1, "passed", 1000, -350);
+    const int p2 = b.print("Ligne d'influence conforme (L/4) : ", c2, "passed", 1250, -350);
+    b.then(start, plot);
+    b.then(plot, p0);
+    b.then(p0, p1);
+    b.then(p1, p2);
+    return b.ok(error);
+}
 } // namespace
 
 const std::vector<Info>& catalog()
@@ -698,6 +1270,9 @@ const std::vector<Info>& catalog()
         { "methode-deplacements-2d", "Methode_Des_Deplacements_2D",
           "Méthode de rigidité directe pas à pas (étapes 1 à 9) sur le portique de démonstration : K = Σ A_eᵀ·k_e·A_e assemblée dans une "
           "boucle, K_ff·d_f = F_f − K_fc·d_c, réactions, équilibre, efforts, visualisation ; comparée au calcul direct." },
+        { "methode-sous-graphes", "Methode_Des_Deplacements_2D en sous-graphes",
+          "La même méthode découpée en six sous-graphes réutilisables (construire le modèle, assembler K et F, conditions aux limites, "
+          "résoudre, réactions et efforts internes, équilibre) ; double-cliquer une instance pour ouvrir son corps." },
         { "classe-frame-element", "Classe FrameElement2D (utilisation directe)",
           "Mode 1 : nœuds, matériau et section du catalogue → élément, longueur, angle, k', T, k = Tᵀk'T, charges nodales équivalentes." },
         { "solveur-etudiant", "Solveur de l'étudiant (gradient conjugué)",
@@ -708,18 +1283,72 @@ const std::vector<Info>& catalog()
           "Poutre sans appui horizontal : diagnostic du mécanisme (DDL, mode de corps rigide, causes possibles)." },
         { "tassement", "Tassement d'appui (déplacement imposé)",
           "Poutre continue, tassement de l'appui central : réaction comparée à −6EIΔ/L³ calculée dans le graphe." },
+        { "rotules-ressorts", "Rotule et appui élastique (poutre Gerber)",
+          "Modèle construit par blocs : rotule d'extrémité, appui élastique ; réactions et flèche du ressort comparées à la statique." },
+        { "analyse-modale", "Analyse modale (oscillateur à 1 DDL)",
+          "Dynamique pédagogique : masse nodale, mode propre, ω² comparé à 3EI/(mH³), masse effective." },
+        { "newmark-echelon", "Newmark : charge échelon",
+          "Dynamique pédagogique : intégration de Newmark, pointe comparée à 2P/k (amplification dynamique 2)." },
+        { "analyse-spectrale", "Analyse spectrale (spectre saisi)",
+          "Dynamique pédagogique : spectre de vérification saisi, effort tranchant à la base comparé à m·Sa(T1)." },
+        { "charges-roulantes", "Charges roulantes (théorème de Barré)",
+          "Convoi à deux essieux, enveloppe des moments comparée au théorème de Barré, ligne d'influence ; calculs statiques successifs." },
     };
     return list;
+}
+
+bool buildTsaImport(const std::string& path, const std::string& scope, int loadCase, int combination, Graph& g, std::string* error)
+{
+    g.clear();
+    const auto slash = path.find_last_of("/\\");
+    const std::string file = slash == std::string::npos ? path : path.substr(slash + 1);
+    g.name = "Import TSA — " + file;
+    g.description = "Portique plan importé du projet TSA « " + file + " » (portée : " + (scope.empty() ? std::string("plan du modèle") : scope)
+                    + ") par le chemin d'analyse 2D de TSA (lecture seule, empreinte SHA-256 contrôlée), puis calculé par la méthode des "
+                      "déplacements. Le rapport d'import est la sortie « Rapport d'import » du bloc (onglet Valeurs). Modifier le fichier, la "
+                      "portée, le cas ou la combinaison dans les blocs, puis Exécuter.";
+    Builder b(g, NodeLibrary::standard());
+    const int start = b.node("event.start", -600, -320);
+    const int imp = b.node("struct.model_import_tsa", -600, 120);
+    b.value(imp, "path", path);
+    b.value(imp, "scope", scope);
+    // Bloc pur non réutilisable (le projet peut changer) : chaque lecture relirait le fichier ; le modèle est lu une fois
+    const int set = b.setVar("modèle", imp, "model", -300, -320);
+    const int get = b.getVar("modèle", -300, 120);
+    const int valid = b.node("struct.model_validate", 0, 120);
+    b.link(get, "value", valid, "model");
+    const int solve = b.node("struct.solve_direct", 300, 120);
+    b.link(get, "value", solve, "model");
+    b.value(solve, "case", static_cast<long long>(loadCase));
+    b.value(solve, "combination", static_cast<long long>(combination));
+    const int p1 = b.print("Contrôle des données : ", valid, "report", 0, -320);
+    const int show = b.node("struct.show", 300, -320);
+    b.link(solve, "result", show, "value");
+    b.value(show, "title", "Import TSA — " + file);
+    const int p2 = b.print("Calcul : ", solve, "message", 600, -320);
+    b.then(start, set);
+    b.then(set, p1);
+    b.then(p1, show);
+    b.then(show, p2);
+    b.frame({ start, imp, set, get }, "Projet TSA\nlecture seule, empreinte contrôlée ; modèle lu une fois par exécution (variable « modèle »)", "#00796B");
+    b.frame({ valid, solve, p1, show, p2 }, "Calcul\ncontrôle des données, méthode des déplacements (cas ou combinaison), visualisation", "#0277BD");
+    return b.ok(error);
 }
 
 bool build(const std::string& id, Graph& graph, std::string* error)
 {
     if (id == "methode-deplacements-2d") return buildMethod(graph, error);
+    if (id == "methode-sous-graphes") return buildMethodSubgraphs(graph, error);
     if (id == "classe-frame-element") return buildElementClass(graph, error);
     if (id == "solveur-etudiant") return buildStudentSolver(graph, error);
     if (id == "solveur-etudiant-gs") return buildStudentGaussSeidel(graph, error);
     if (id == "mecanisme") return buildMechanism(graph, error);
     if (id == "tassement") return buildSettlement(graph, error);
+    if (id == "rotules-ressorts") return buildHingesSprings(graph, error);
+    if (id == "analyse-modale") return buildModal(graph, error);
+    if (id == "newmark-echelon") return buildNewmark(graph, error);
+    if (id == "analyse-spectrale") return buildSpectral(graph, error);
+    if (id == "charges-roulantes") return buildMovingLoads(graph, error);
     if (error) *error = "exemple inconnu « " + id + " »";
     return false;
 }

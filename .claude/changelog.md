@@ -1,5 +1,36 @@
 # Changelog — TSALab
 
+## 2026-10-17 (mission « Terminer les fonctionnalités incomplètes » — branche feature/blueprint-structurel, non poussée)
+
+### Added
+- Rotules d'extrémité (condensation statique, rotations libres éliminées) et appuis élastiques dans `tsalab::structural`
+  (S17, S18) ; blocs et exemple « Rotule et appui élastique » (L23, L24).
+- Dynamique pédagogique `Dynamics2D` (masses, analyse modale, Newmark, accélérogramme fourni par l'utilisateur, spectre
+  saisi SRSS / CQC) et `MovingLoads2D` (lignes d'influence, enveloppes, calculs statiques successifs) : S19 à S22,
+  blocs F / G, exemples, L23, L25, L26. Aucune donnée sismique fabriquée ; pas d'interaction véhicule-pont.
+- Import d'un projet TSA (`TsaImport`, bloc `struct.model_import_tsa`) par le chemin d'analyse plane de TSA, source
+  intacte (SHA-256), rapport importé / converti / ignoré, refus motivés, annulation : L27 (14 portées importées,
+  4 refusées, 13 comparées au solveur 2D de TSA à 1e-9).
+- Exemple « Methode_Des_Deplacements_2D en sous-graphes » (six sous-graphes obtenus par encapsulation, interfaces
+  typées, documentation) : L28 (K, F, d, R identiques au graphe pas à pas). Sous-graphes du moteur partagé : TSA
+  tests 392–393.
+- Gauss-Seidel écrit (`gaussSeidelSweep`) et exemple « Solveur de l'étudiant (Gauss-Seidel) » ; L19 strict.
+- Boîte « Blueprint ▸ Importer un portique d'un projet TSA… » (`lab/LabUI/TsaImportDialog.*`) : portées, aperçu en tâche
+  de fond annulable, rapport, choix du cas, graphe d'analyse (`StructuralGraphs::buildTsaImport`, projet lu une fois) : L29.
+- Persistance JSON du modèle et des résultats (`StructuralJson.*`, formats `tsalab-model2d` / `tsalab-result2d`,
+  relecture à l'identique, lecture stricte) et quatre blocs Enregistrer / Lire : L30.
+- Inventaire `docs/AUDIT_FONCTIONNALITES.md` ; feuille de route et documentation mises à jour.
+
+### Fixed
+- Boîte d'import : un clic sur « Aperçu » juste après la saisie du chemin pouvait être perdu (lecture des portées lancée
+  pendant le changement de focus, boucle locale avalant le relâchement du bouton) ; lecture différée. Trouvé par l'essai
+  de l'interface (UIA).
+
+### Verified
+- Debug : science 22/22, laboratoire 27/27 (L4 à L30), TSA 393/393 ; essai de TSALab réel (UIA) 28/28 : sous-graphes
+  (double-clic sur une instance, fil d'Ariane, propriétés, retour, exécution) et import (refus motivé, aperçu, graphe
+  d'analyse exécuté, projet intact) ; réglages utilisateur restaurés à l'identique.
+
 ## 2026-10-09 (Claude Code co-ingénieur par MCP)
 
 ### Added

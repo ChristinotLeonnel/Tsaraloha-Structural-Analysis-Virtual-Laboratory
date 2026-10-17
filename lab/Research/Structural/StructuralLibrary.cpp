@@ -13,6 +13,8 @@ bool registerStructuralNodes(TSA::Blueprint::NodeLibrary& library)
     detail::registerAssemblyNodes(library);
     detail::registerMathNodes(library);
     detail::registerControlNodes(library);
+    detail::registerDynamicsNodes(library);
+    detail::registerMovingLoadNodes(library);
     return true;
 }
 

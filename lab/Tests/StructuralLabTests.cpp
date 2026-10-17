@@ -1,22 +1,43 @@
 // Tests de TSALab Blueprint — programmation structurelle (tests L15 à L22) : bibliothèque de blocs pré-codés, graphe
 // Methode_Des_Deplacements_2D comparé au calcul direct (mission, cas 9), sauvegarde et réouverture du graphe (cas 10),
 // mécanisme (cas 7), solveur de l'étudiant (mode 2), classe FrameElement2D et charges en blocs (mode 1), tassement
-// d'appui (cas 6), blocs mathématiques et exports. La science (cas 1 à 8 analytiques) est testée par
-// tsalab_science_tests (S7 à S16).
+// d'appui (cas 6), blocs mathématiques et exports ; L23 à L26 : rotules et appuis élastiques, dynamique pédagogique
+// (modal, Newmark, accélérogramme fourni, spectral), charges roulantes, comparaison de solveurs, enregistrement des
+// graphes ; L27 : import de projets TSA réels ; L28 : méthode des déplacements en sous-graphes ; L29 : graphe d'analyse
+// d'un projet TSA importé ; L30 : persistance JSON du modèle et des résultats. La science (solutions analytiques) est testée par tsalab_science_tests
+// (S7 à S22).
 #include "Blueprint/BlueprintFile.h"
 #include "Blueprint/BlueprintRuntime.h"
+#include "IO/TSAFile.h"
+#include "IO/TSAFileFormat.h"
+#include "Model/Load/LoadCase.h"
+#include "Model/Load/LoadEnums.h"
+#include "Model/Load/LoadManager.h"
+#include "Model/Load/NodalLoad.h"
+#include "Model/Model.h"
+#include "Model/SupportDefinition.h"
 #include "Research/Examples/StructuralGraphs.h"
 #include "Research/Structural/ResultBoard.h"
 #include "Research/Structural/StructuralLibrary.h"
 #include "Research/Structural/StructuralModels.h"
+#include "Research/Structural/StructuralJson.h"
 #include "Research/Structural/StructuralObjects.h"
+#include "Research/Structural/TsaImport.h"
+#include "tsalab/planar/PlanarSolvers.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <atomic>
+
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <iostream>
 #include <map>
 #include <set>
@@ -105,7 +126,7 @@ const S::AnalysisResult2D* graphResult(const Graph& g, const ExecutionReport& re
 }
 } // namespace
 
-int structuralLabTestCount() { return 8; }
+int structuralLabTestCount() { return 16; }
 
 bool runSuite_Structural(int& passed)
 {
@@ -131,9 +152,13 @@ bool runSuite_Structural(int& passed)
             TEST_CHECK(!d->documentation.empty() && !d->description.empty(), "Test L15: documentation du bloc " << id);
             TEST_CHECK(!d->source.empty() && QFileInfo::exists(root.filePath(QString::fromStdString(d->source))),
                        "Test L15: source du bloc " << id << " présente (" << d->source << ")");
-            if (d->pure && d->status == NodeStatus::Validated) TEST_CHECK(d->cacheable, "Test L15: bloc pur réutilisable (" << id << ")");
+            // Bloc qui lit un fichier de l'utilisateur : ses sorties ne dépendent pas que de ses entrées, il n'est jamais réutilisé
+            const bool readsFile = id == "struct.accelerogram_file" || id == "struct.model_import_tsa" || id == "struct.model_load_json"
+                                   || id == "struct.result_load_json";
+            if (d->pure && d->status == NodeStatus::Validated)
+                TEST_CHECK(d->cacheable != readsFile, "Test L15: bloc pur réutilisable, sauf lecture de fichier (" << id << ")");
         }
-        TEST_CHECK(perCategory.size() == 6 && ids.size() >= 90, "Test L15: 6 catégories, " << ids.size() << " blocs");
+        TEST_CHECK(perCategory.size() == 8 && ids.size() >= 110, "Test L15: 8 catégories (A à G, expérimental), " << ids.size() << " blocs");
         for (const char* required : { "struct.frame_element", "struct.local_stiffness", "struct.transformation", "struct.global_element_stiffness",
                                       "struct.equivalent_loads", "struct.element_displacement", "struct.element_end_forces", "struct.internal_forces",
                                       "struct.dof_numbering", "struct.global_stiffness", "struct.global_loads", "struct.boundary_conditions",
@@ -155,7 +180,7 @@ bool runSuite_Structural(int& passed)
         bool missing = false;
         for (const auto& i : lib.validate(g)) missing = missing || (i.node == el && i.message.find("Matériau") != std::string::npos);
         TEST_CHECK(missing, "Test L15: entrée objet obligatoire non reliée signalée");
-        std::cout << "[PASS] Test L15: bibliothèque structurelle — " << ids.size() << " blocs en 6 catégories, documentés, sources présentes, typés"
+        std::cout << "[PASS] Test L15: bibliothèque structurelle — " << ids.size() << " blocs en 8 catégories, documentés, sources présentes, typés"
                   << std::endl;
         ++passed;
     }
@@ -596,6 +621,684 @@ bool runSuite_Structural(int& passed)
         why = failing("1 2 ; 2 4", "1", "matrix.inverse", "matrice singulière");
         TEST_CHECK(why.empty(), "Test L22: inversion d'une matrice singulière refusée (" << why << ")");
         std::cout << "[PASS] Test L22: blocs mathématiques (A·A⁻¹ = I, P·A = L·U, résidu, sous-matrice, dimensions, singularité), exports CSV, courbe" << std::endl;
+        ++passed;
+    }
+
+    // -------------------------------------------------------------------------
+    // TEST L23 : exemples des nouveaux modules (rotule et ressort, modal, Newmark, spectral, charges roulantes) exécutés
+    // et conformes aux références analytiques calculées dans les graphes
+    // -------------------------------------------------------------------------
+    {
+        const std::map<std::string, std::vector<std::string>> expected = {
+            { "rotules-ressorts",
+              { "Réaction R1 conforme (70 kN) : vrai", "Moment d'encastrement conforme (200 kN·m) : vrai", "Flèche de l'appui élastique conforme (−6 mm) : vrai" } },
+            { "analyse-modale", { "ω² conforme à 3EI/(mH³) : vrai", "Masse effective conforme (10 t) : vrai" } },
+            { "newmark-echelon", { "Pointe conforme à 2P/k : vrai" } },
+            { "analyse-spectrale", { "Effort tranchant conforme à m·Sa(T1) : vrai" } },
+            { "charges-roulantes", { "Moment maximal conforme au théorème de Barré (405 kN·m) : vrai", "Ligne d'influence conforme (L/4) : vrai" } },
+        };
+        for (const auto& [id, lines] : expected)
+        {
+            Graph g;
+            std::string error;
+            TEST_CHECK(SG::build(id, g, &error), "Test L23: exemple " << id << " construit (" << error << ")");
+            TEST_CHECK(lib.validate(g).empty() && lib.warnings(g).empty(), "Test L23: exemple " << id << " valide");
+            const auto rep = Runner(lib, g, nullptr).run();
+            TEST_CHECK(rep.ok, "Test L23: exemple " << id << " exécuté (" << rep.message << ")");
+            for (const auto& l : lines) TEST_CHECK(logContains(rep, l), "Test L23: " << id << " — « " << l << " »");
+            if (id == "rotules-ressorts")
+            {   // rotule et ressort transmis par les blocs jusqu'au modèle calculé
+                const auto* r = outputObject<RS::ResultObject>(rep, nodeOfType(g, "struct.solve_direct"), "result");
+                TEST_CHECK(r && r->value().model.elements.size() == 2 && r->value().model.elements[0].releaseJ && !r->value().model.elements[0].releaseI,
+                           "Test L23: rotule de l'élément 1 portée par le modèle");
+                const S::SupportCondition* sp = r->value().model.support(3);
+                TEST_CHECK(sp && sp->kUy == 5000.0 && !sp->fixUy, "Test L23: appui élastique du nœud 3 porté par le modèle");
+                TEST_CHECK(std::abs(r->value().nodeSpringForce(3)[1] - 30.0) <= 1e-9 * 30.0, "Test L23: force du ressort qL/2 = 30 kN");
+                TEST_CHECK(r->value().equilibrium.balanced(1e-9), "Test L23: équilibre global avec la force du ressort");
+            }
+            if (id == "charges-roulantes")
+                TEST_CHECK(logContains(rep, "aucune interaction véhicule-pont"), "Test L23: le journal précise la nature statique du calcul");
+        }
+        std::cout << "[PASS] Test L23: exemples — rotule et appui élastique, analyse modale, Newmark, spectral, charges roulantes conformes" << std::endl;
+        ++passed;
+    }
+
+    // -------------------------------------------------------------------------
+    // TEST L24 : méthode pas à pas avec appui élastique — K = Σ A_eᵀ·k_e·A_e + K_ressorts, résolution, équilibre avec d
+    // -------------------------------------------------------------------------
+    {
+        Graph g;
+        std::string error;
+        TEST_CHECK(SG::build("rotules-ressorts", g, &error), "Test L24: modèle par blocs (" << error << ")");
+        const int model = nodeOfType(g, "struct.model_add_case");
+        Builder b { g, lib };
+        const int loads = b.node("struct.loading"), dofs = b.node("struct.dof_numbering"), K = b.node("struct.global_stiffness");
+        const int Ks = b.node("struct.spring_stiffness"), F = b.node("struct.global_loads"), bc = b.node("struct.boundary_conditions");
+        const int rs = b.node("struct.reduced_system"), sol = b.node("struct.solve_displacements"), disp = b.node("struct.displacement_recovery");
+        const int reac = b.node("struct.reaction_recovery"), eq = b.node("struct.equilibrium"), eqNoD = b.node("struct.equilibrium");
+        b.link(model, "model", loads, "model");
+        b.link(model, "model", dofs, "model");
+        for (int n : { K, Ks })
+        {
+            b.link(model, "model", n, "model");
+            b.link(dofs, "dofs", n, "dofs");
+        }
+        for (int n : { F, bc })
+        {
+            b.link(model, "model", n, "model");
+            b.link(dofs, "dofs", n, "dofs");
+            b.link(loads, "loads", n, "loads");
+        }
+        b.link(K, "K", rs, "K");
+        b.link(F, "F", rs, "F");
+        b.link(bc, "dofs", rs, "dofs");
+        b.link(rs, "system", sol, "system");
+        b.link(model, "model", sol, "model");
+        b.link(sol, "d_f", disp, "d_f");
+        b.link(bc, "dofs", disp, "dofs");
+        b.link(K, "K", reac, "K");
+        b.link(disp, "d", reac, "d");
+        b.link(F, "F", reac, "F");
+        b.link(bc, "dofs", reac, "dofs");
+        for (int n : { eq, eqNoD })
+        {
+            b.link(model, "model", n, "model");
+            b.link(bc, "dofs", n, "dofs");
+            b.link(loads, "loads", n, "loads");
+            b.link(reac, "R", n, "R");
+        }
+        b.link(disp, "d", eq, "d");
+        const int start = b.node("event.start"), p1 = b.node("debug.print"), p2 = b.node("debug.print");
+        b.link(eq, "balanced", p1, "value");
+        b.link(Ks, "count", p2, "value");
+        b.then(start, p1);
+        b.then(p1, p2);
+        TEST_CHECK(b.error.empty(), "Test L24: graphe pas à pas (" << b.error << ")");
+        const auto rep = Runner(lib, g, nullptr).run();
+        TEST_CHECK(rep.ok, "Test L24: exécution (" << rep.message << ")");
+        TEST_CHECK(rep.values.at(eq).at("balanced") == Value(true), "Test L24: équilibre vérifié avec les forces des ressorts");
+        TEST_CHECK(outputReal(rep, Ks, "count") == 1.0, "Test L24: un ressort actif");
+        const auto* k = outputObject<RS::MatrixObject>(rep, K, "K");
+        const auto* ks = outputObject<RS::MatrixObject>(rep, Ks, "Ks");
+        TEST_CHECK(k && ks, "Test L24: K et K_ressorts produits");
+        const auto* res = outputObject<RS::ResultObject>(rep, nodeOfType(g, "struct.solve_direct"), "result");
+        TEST_CHECK(res, "Test L24: calcul direct du même graphe");
+        // K du bloc = Σ A_eᵀ·k_e·A_e (élément par élément) + K_ressorts
+        tsalab::numerics::Matrix sum(k->value().matrix.rows, k->value().matrix.cols);
+        for (const auto& def : res->value().model.elements)
+        {
+            S::FrameElement2D el;
+            TEST_CHECK(S::makeElement(res->value().model, def, el), "Test L24: élément");
+            const auto A = S::assemblyOperator(res->value().dofs, def.nodeI, def.nodeJ);
+            const auto ke = tsalab::numerics::LinAlg::congruence(A, el.globalStiffness());
+            for (std::size_t q = 0; q < sum.data.size(); ++q) sum.data[q] += ke.data[q];
+        }
+        for (std::size_t q = 0; q < sum.data.size(); ++q) sum.data[q] += ks->value().matrix.data[q];
+        TEST_CHECK(maxDiff(sum, k->value().matrix) <= 1e-12 * tsalab::numerics::LinAlg::maxAbs(sum), "Test L24: K = Σ A_eᵀ·k_e·A_e + K_ressorts");
+        // Sans d, le bilan d'un modèle à ressorts est refusé (forces des ressorts inconnues)
+        Graph g2 = g;
+        Builder b2 { g2, lib };
+        const int p3 = b2.node("debug.print");
+        b2.link(eqNoD, "balanced", p3, "value");
+        b2.then(nodeOfType(g2, "event.start"), p3);
+        const auto rep2 = Runner(lib, g2, nullptr).run();
+        TEST_CHECK(!rep2.ok && rep2.message.find("appuis élastiques") != std::string::npos, "Test L24: bilan sans d refusé (" << rep2.message << ")");
+        std::cout << "[PASS] Test L24: méthode pas à pas avec appui élastique — K = Σ A_eᵀk_eA_e + K_ressorts, équilibre avec −k·u" << std::endl;
+        ++passed;
+    }
+
+    // -------------------------------------------------------------------------
+    // TEST L25 : blocs de dynamique (accélérogramme lu dans un fichier, spectre, Newmark) ≡ cœur scientifique ;
+    // comparaison de deux solveurs
+    // -------------------------------------------------------------------------
+    {
+        QTemporaryDir tmp;
+        TEST_CHECK(tmp.isValid(), "Test L25: dossier temporaire");
+        // Signal de vérification (harmonique, analytique) écrit pour l'essai : ce n'est pas un séisme
+        const QString path = tmp.filePath(QStringLiteral("signal_verification.txt"));
+        {
+            QFile f(path);
+            TEST_CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text), "Test L25: écriture du signal d'essai");
+            std::string text = "# signal harmonique de verification (analytique, pas un seisme)\nt a\n";
+            for (int k = 0; k <= 400; ++k)
+            {
+                const double t = 0.005 * k;
+                text += std::to_string(t) + " " + std::to_string(0.2 * std::sin(2.0 * std::acos(-1.0) * 1.5 * t)) + "\n";
+            }
+            f.write(text.c_str());
+        }
+        const QByteArray before = [&] {
+            QFile f(path);
+            return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        }();
+        Graph g;
+        std::string error;
+        TEST_CHECK(SG::build("analyse-modale", g, &error), "Test L25: oscillateur (" << error << ")");
+        const int model = nodeOfType(g, "struct.model_add_mass");
+        Builder b { g, lib };
+        const int acc = b.node("struct.accelerogram_file", { { "path", path.toStdString() }, { "scale", 9.80665 } });
+        const int th = b.node("struct.time_history", { { "dt", 0.005 }, { "duration", 2.0 } });
+        const int spec = b.node("struct.accelerogram_spectrum", { { "periods", std::string("0.3 0.6928") }, { "xi", 0.0 } });
+        b.link(model, "model", th, "model");
+        b.link(acc, "motion", th, "ground");
+        b.link(acc, "motion", spec, "motion");
+        const int cmpSolvers = b.node("matrix.compare_solvers");
+        const int Kt = b.node("matrix.from_text", { { "text", std::string("4 1 0 ; 1 3 1 ; 0 1 2") } });
+        const int ft = b.node("vector.from_text", { { "text", std::string("1 2 3") } });
+        b.link(Kt, "M", cmpSolvers, "K");
+        b.link(ft, "v", cmpSolvers, "f");
+        // Affichages insérés en tête de la chaîne d'exécution de l'exemple (les blocs purs sont évalués par leurs lecteurs)
+        const int start = nodeOfType(g, "event.start");
+        const auto first = g.linksFrom(start, "then");
+        TEST_CHECK(first.size() == 1, "Test L25: chaîne d'exécution de l'exemple");
+        const Link next = first.front();
+        g.removeLink(next);
+        int last = start;
+        for (const auto& [n, pin] : std::vector<std::pair<int, std::string>> { { th, "summary" }, { spec, "curve" }, { cmpSolvers, "report" }, { acc, "skipped" } })
+        {
+            const int p = b.node("debug.print");
+            b.link(n, pin, p, "value");
+            b.then(last, p);
+            last = p;
+        }
+        b.link(last, "then", next.toNode, next.toPin);
+        TEST_CHECK(b.error.empty(), "Test L25: graphe (" << b.error << ")");
+        const auto rep = Runner(lib, g, nullptr).run();
+        TEST_CHECK(rep.ok, "Test L25: exécution (" << rep.message << ")");
+        TEST_CHECK(outputReal(rep, acc, "points") == 401.0 && outputReal(rep, acc, "skipped") == 2.0, "Test L25: 401 points lus, 2 lignes d'en-tête ignorées");
+        TEST_CHECK(std::abs(outputReal(rep, acc, "peak") - 0.2 * 9.80665) <= 1e-3 * 0.2 * 9.80665, "Test L25: pic du signal × facteur d'unité");
+        // Même calcul par le cœur scientifique, mêmes données lues : résultats identiques
+        const auto* motion = outputObject<RS::GroundMotionObject>(rep, acc, "motion");
+        const auto* hist = outputObject<RS::TimeHistoryObject>(rep, th, "history");
+        const auto* modelObj = outputObject<RS::ModelObject>(rep, model, "model");
+        TEST_CHECK(motion && hist && modelObj && motion->value().source.find("signal_verification.txt") != std::string::npos, "Test L25: provenance du signal");
+        S::TimeHistoryOptions o;
+        o.dt = 0.005;
+        o.duration = 2.0;
+        const S::TimeHistoryResult direct = S::timeHistory(modelObj->value(), o, nullptr, &motion->value());
+        TEST_CHECK(direct.success && direct == hist->value(), "Test L25: bloc Newmark ≡ tsalab::structural::timeHistory");
+        S::ResponseSpectrum ref;
+        TEST_CHECK(S::accelerogramSpectrum(motion->value().acceleration, { 0.3, 0.6928 }, 0.0, ref), "Test L25: spectre de référence");
+        const auto* sp = outputObject<RS::SpectrumObject>(rep, spec, "spectrum");
+        TEST_CHECK(sp && sp->value().points == ref.points, "Test L25: spectre du bloc ≡ accelerogramSpectrum");
+        TEST_CHECK(outputReal(rep, cmpSolvers, "deviation") <= 1e-9 && outputReal(rep, cmpSolvers, "residual_b") <= 1e-9,
+                   "Test L25: Cholesky et gradient conjugué concordent (écart " << outputReal(rep, cmpSolvers, "deviation") << ")");
+        QFile f(path);
+        TEST_CHECK(f.open(QIODevice::ReadOnly) && f.readAll() == before, "Test L25: fichier d'accélérogramme non modifié");
+        // Fichier absent : refus motivé
+        Graph e;
+        Builder eb { e, lib };
+        const int bad = eb.node("struct.accelerogram_file", { { "path", tmp.filePath(QStringLiteral("absent.txt")).toStdString() } });
+        const int es = eb.node("event.start"), ep = eb.node("debug.print");
+        eb.link(bad, "points", ep, "value");
+        eb.then(es, ep);
+        const auto r2 = Runner(lib, e, nullptr).run();
+        TEST_CHECK(!r2.ok && r2.message.find("illisible") != std::string::npos, "Test L25: fichier absent refusé (" << r2.message << ")");
+        std::cout << "[PASS] Test L25: accélérogramme fourni (fichier non modifié), Newmark et spectre ≡ cœur scientifique, comparaison de solveurs" << std::endl;
+        ++passed;
+    }
+
+    // -------------------------------------------------------------------------
+    // TEST L26 : enregistrement et réouverture des graphes des nouveaux modules (versions de blocs, résultats identiques)
+    // -------------------------------------------------------------------------
+    {
+        QTemporaryDir tmp;
+        TEST_CHECK(tmp.isValid(), "Test L26: dossier temporaire");
+        for (const char* id : { "rotules-ressorts", "charges-roulantes", "analyse-spectrale" })
+        {
+            Graph g, back;
+            std::string error;
+            TEST_CHECK(SG::build(id, g, &error), "Test L26: " << id);
+            const QString path = tmp.filePath(QString::fromLatin1(id) + QStringLiteral(".tsbp"));
+            QString ferr;
+            TEST_CHECK(saveFile(g, path, &ferr), "Test L26: enregistrement de " << id << " (" << ferr.toStdString() << ")");
+            TEST_CHECK(loadFile(path, back, &ferr), "Test L26: réouverture de " << id << " (" << ferr.toStdString() << ")");
+            TEST_CHECK(back.nodes().size() == g.nodes().size() && back.links().size() == g.links().size(), "Test L26: nœuds et liens restaurés (" << id << ")");
+            const auto r1 = Runner(lib, g, nullptr).run(), r2 = Runner(lib, back, nullptr).run();
+            TEST_CHECK(r1.ok && r2.ok && r1.log == r2.log, "Test L26: même journal après réouverture (" << id << ")");
+        }
+        QFile f(tmp.filePath(QStringLiteral("rotules-ressorts.tsbp")));
+        TEST_CHECK(f.open(QIODevice::ReadOnly), "Test L26: lecture du fichier");
+        const QByteArray json = f.readAll();
+        TEST_CHECK(json.contains("\"struct.frame_element\"") && json.contains("\"struct.elastic_support\""), "Test L26: blocs enregistrés");
+        std::cout << "[PASS] Test L26: graphes rotule/ressort, charges roulantes et spectral enregistrés et rouverts à l'identique" << std::endl;
+        ++passed;
+    }
+
+    // -------------------------------------------------------------------------
+    // TEST L27 : import de projets TSA réels (exemples du dépôt TSA, copiés dans un dossier temporaire) : portées planes,
+    // rapport, traçabilité, validation croisée avec le solveur 2D de TSA (MetDeDeplacement sur l'entrée Custom2D), fichiers
+    // jamais modifiés ; refus motivés : fichier non TSA, tronqué, de version future, câble, portée inconnue, annulation
+    // -------------------------------------------------------------------------
+    {
+        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
+        QTemporaryDir tmp;
+        TEST_CHECK(tmp.isValid(), "Test L27: dossier temporaire");
+        int importedPlanes = 0, refusedPlanes = 0, compared = 0;
+        std::size_t trussBars = 0;
+        for (const char* file : { "TSA_Demo_Hangar_60x40m.tsa", "TSA_Demo_Pont_Treillis_3x48m.tsa", "TSA_Projet_Batiment_BA_R+4.tsa" })
+        {
+            const QString original = root.filePath(QStringLiteral("TSA/examples/") + QString::fromLatin1(file));
+            TEST_CHECK(QFileInfo::exists(original), "Test L27: exemple TSA présent (" << file << ")");
+            const std::string h0 = RS::fileSha256(original.toStdString());
+            const QString copy = tmp.filePath(QString::fromLatin1(file));
+            TEST_CHECK(!h0.empty() && QFile::copy(original, copy), "Test L27: copie de " << file);
+            std::vector<std::string> scopes;
+            std::string err;
+            TEST_CHECK(RS::listTsaScopes(copy.toStdString(), scopes, &err) && !scopes.empty(), "Test L27: portées de " << file << " (" << err << ")");
+            for (std::size_t k = 0; k < scopes.size() && k < 6; ++k)
+            {
+                S::Model2D m;
+                RS::TsaImportReport rep;
+                tsalab::planar::Input in;
+                if (!RS::importTsaProject(copy.toStdString(), { scopes[k] }, m, rep, nullptr, &in))
+                {
+                    TEST_CHECK(!rep.errors.empty() && rep.message.rfind("Import refusé", 0) == 0 && m.nodes.empty(),
+                               "Test L27: refus motivé (" << file << ", « " << scopes[k] << " ») : " << rep.message);
+                    ++refusedPlanes;
+                    continue;
+                }
+                ++importedPlanes;
+                trussBars += rep.trussBars;
+                TEST_CHECK(S::validate(m).ok(), "Test L27: modèle importé valide (" << file << ", " << scopes[k] << ")");
+                TEST_CHECK(m.metadataValue("sha256") == h0 && m.metadataValue("fichier") == copy.toStdString() && !m.metadataValue("portée").empty()
+                               && !m.metadataValue("format").empty(),
+                           "Test L27: traçabilité (fichier, empreinte, portée, format)");
+                TEST_CHECK(m.nodes.front().name.rfind("TSA N", 0) == 0 && !m.elements.front().name.empty(), "Test L27: correspondance des nœuds et éléments TSA");
+                TEST_CHECK(rep.text().find("Importé") != std::string::npos && rep.nodes == m.nodes.size(), "Test L27: rapport d'import");
+                // Validation croisée, un cas chargé par portée : Model2D (rigidité directe) ≡ solveur 2D de TSA (MetDeDeplacement)
+                for (const auto& lc : m.loadCases)
+                {
+                    if (lc.empty()) continue;
+                    const auto res = S::solveLinearStatic(m, { lc.id, 0 });
+                    tsalab::planar::Input one = in;
+                    one.request.loadCaseIds = { lc.id };
+                    one.request.combinationId = 0;
+                    const auto out = tsalab::planar::MetDeDeplacementSolver().solve(one);
+                    TEST_CHECK(res.success == out.success, "Test L27: même issue que le solveur 2D de TSA (" << file << ", cas " << lc.id << ") : " << res.message
+                                                                                                               << " / " << out.message);
+                    if (!res.success) break;
+                    TEST_CHECK(res.equilibrium.balanced(1e-9), "Test L27: équilibre (" << res.equilibrium.text() << ")");
+                    double scale = 0.0, diff = 0.0;
+                    for (const auto& d : out.displacements)
+                    {
+                        const auto u = res.nodeDisplacement(d.node);
+                        const double ref[3] = { d.ux, d.uy, d.rz };
+                        for (int c = 0; c < 3; ++c)
+                        {
+                            scale = std::max(scale, std::abs(ref[c]));
+                            diff = std::max(diff, std::abs(u[static_cast<std::size_t>(c)] - ref[c]));
+                        }
+                    }
+                    TEST_CHECK(scale > 0.0 && diff <= 1e-9 * scale,
+                               "Test L27: déplacements ≡ MetDeDeplacement (" << file << ", « " << scopes[k] << " », cas " << lc.id << ", écart relatif " << diff / scale << ")");
+                    ++compared;
+                    break;
+                }
+            }
+            TEST_CHECK(RS::fileSha256(original.toStdString()) == h0 && RS::fileSha256(copy.toStdString()) == h0, "Test L27: projet source jamais modifié (" << file << ")");
+        }
+        TEST_CHECK(importedPlanes >= 2 && compared >= 2, "Test L27: au moins deux portées importées et comparées (" << importedPlanes << ", " << compared << ")");
+        // Refus motivés
+        auto refusal = [&](const QString& path, const std::string& scope, const std::atomic<bool>* cancel = nullptr) {
+            S::Model2D m;
+            RS::TsaImportReport rep;
+            const bool ok = RS::importTsaProject(path.toStdString(), { scope }, m, rep, cancel);
+            return ok ? std::string("(accepté)") : rep.text();
+        };
+        const QString junk = tmp.filePath(QStringLiteral("non_tsa.tsa"));
+        {
+            QFile f(junk);
+            TEST_CHECK(f.open(QIODevice::WriteOnly) && f.write(QByteArray(5000, '\x5A')) == 5000, "Test L27: fichier non TSA");
+        }
+        TEST_CHECK(refusal(junk, "").find("en-tête TSA invalide") != std::string::npos, "Test L27: fichier non TSA refusé");
+        const QString truncated = tmp.filePath(QStringLiteral("tronque.tsa"));
+        TEST_CHECK(QFile::copy(tmp.filePath(QStringLiteral("TSA_Demo_Hangar_60x40m.tsa")), truncated), "Test L27: copie à tronquer");
+        {
+            QFile f(truncated);
+            TEST_CHECK(f.resize(f.size() / 2), "Test L27: fichier tronqué");
+        }
+        TEST_CHECK(refusal(truncated, "").find("Import refusé") != std::string::npos, "Test L27: fichier tronqué refusé");
+        const QString future = tmp.filePath(QStringLiteral("version_future.tsa"));
+        {
+            TSA::IO::TSAFileHeader h;   // en-tête du format de TSA, version majeure future
+            h.versionMajor = static_cast<uint16_t>(TSA::IO::TSA_FORMAT_VERSION_MAJOR + 1);
+            QFile f(future);
+            TEST_CHECK(f.open(QIODevice::WriteOnly) && f.write(reinterpret_cast<const char*>(&h), sizeof(h)) == static_cast<qint64>(sizeof(h)), "Test L27: en-tête futur");
+        }
+        TEST_CHECK(refusal(future, "").find("plus récente") != std::string::npos, "Test L27: version future refusée (" << refusal(future, "") << ")");
+        const QString cablePath = tmp.filePath(QStringLiteral("cable.tsa"));
+        {
+            TSA::Model::Model cm;
+            const int n1 = cm.addNode(0, 0, 0), n2 = cm.addNode(10, 0, 0), n3 = cm.addNode(0, 0, 5);
+            cm.addBeam(n1, n2);
+            cm.addColumn(n1, n3);
+            cm.addCable(n3, n2, TSA::Model::CableType::StayCable);
+            cm.getNode(n1)->setSupportType(TSA::Model::SupportType::Fixed);
+            cm.getNode(n2)->setSupportType(TSA::Model::SupportType::Pinned);
+            TEST_CHECK(TSA::IO::TSAProjectIO::saveProject(cablePath, cm), "Test L27: projet à câble enregistré par TSA");
+        }
+        const std::string cableText = refusal(cablePath, "");
+        TEST_CHECK(cableText.find("Import refusé") != std::string::npos && (cableText.find("câble") != std::string::npos || cableText.find("Câble") != std::string::npos),
+                   "Test L27: câble refusé, sans conversion silencieuse (" << cableText << ")");
+        // Barres de treillis (projet enregistré par TSA) : converties en barres bi-articulées, signalées, ≡ solveur 2D de TSA
+        const QString trussPath = tmp.filePath(QStringLiteral("treillis.tsa"));
+        {
+            TSA::Model::Model tm;
+            const int na = tm.addNode(0, 0, 0), nb = tm.addNode(4, 0, 0), nc = tm.addNode(2, 0, 2);
+            tm.addTrussMember(na, nb);
+            tm.addTrussMember(na, nc);
+            tm.addTrussMember(nc, nb);
+            tm.getNode(na)->setSupportType(TSA::Model::SupportType::Pinned);
+            tm.getNode(nb)->setSupportType(TSA::Model::SupportType::Pinned);
+            const int lc = tm.loadManager().addLoadCase(TSA::Model::LoadCase(0, "P", TSA::Model::LoadCaseCategory::Live));
+            tm.loadManager().addNodalLoad(TSA::Model::NodalLoad(0, nc, lc, 0.0, 0.0, -50.0, 0.0, 0.0, 0.0, TSA::Model::LoadCoordSystem::Global, "P"));
+            TEST_CHECK(TSA::IO::TSAProjectIO::saveProject(trussPath, tm), "Test L27: projet de treillis enregistré par TSA");
+        }
+        {
+            S::Model2D m;
+            RS::TsaImportReport rep;
+            tsalab::planar::Input in;
+            TEST_CHECK(RS::importTsaProject(trussPath.toStdString(), {}, m, rep, nullptr, &in), "Test L27: treillis importé (" << rep.text() << ")");
+            TEST_CHECK(rep.trussBars == 3 && rep.text().find("bi-articulée") != std::string::npos, "Test L27: 3 barres de treillis converties et signalées");
+            for (const auto& e : m.elements) TEST_CHECK(e.releaseI && e.releaseJ, "Test L27: barre de treillis bi-articulée");
+            const auto res = S::solveLinearStatic(m, { m.loadCases.front().id, 0 });
+            TEST_CHECK(res.success && res.bc.eliminatedDofs.size() == 3, "Test L27: treillis calculé, 3 rotations éliminées (" << res.message << ")");
+            tsalab::planar::Input one = in;
+            one.request.loadCaseIds = { m.loadCases.front().id };
+            const auto out = tsalab::planar::MetDeDeplacementSolver().solve(one);
+            TEST_CHECK(out.success, "Test L27: solveur 2D de TSA sur le treillis (" << out.message << ")");
+            double scale = 0.0, diff = 0.0;
+            for (const auto& d : out.displacements)
+            {
+                const auto u = res.nodeDisplacement(d.node);
+                scale = std::max({ scale, std::abs(d.ux), std::abs(d.uy) });
+                diff = std::max({ diff, std::abs(u[0] - d.ux), std::abs(u[1] - d.uy) });
+            }
+            TEST_CHECK(scale > 0.0 && diff <= 1e-9 * scale, "Test L27: treillis ≡ MetDeDeplacement (écart relatif " << diff / scale << ")");
+            trussBars += rep.trussBars;
+        }
+        const std::string unknown = refusal(tmp.filePath(QStringLiteral("TSA_Demo_Hangar_60x40m.tsa")), "portée inexistante");
+        TEST_CHECK(unknown.find("inconnue") != std::string::npos && unknown.find("Plan du modèle") != std::string::npos, "Test L27: portée inconnue refusée, portées listées");
+        const std::atomic<bool> stop { true };
+        TEST_CHECK(refusal(tmp.filePath(QStringLiteral("TSA_Demo_Hangar_60x40m.tsa")), "", &stop).find("annulé") != std::string::npos, "Test L27: import annulable");
+        std::cout << "[PASS] Test L27: import TSA — " << importedPlanes << " portée(s) importée(s), " << refusedPlanes << " refusée(s) avec la raison, " << compared
+                  << " comparée(s) au solveur 2D de TSA (1e-9), " << trussBars << " barre(s) de treillis converties ; sources intactes ; non TSA, tronqué, "
+                  << "version future, câble, portée inconnue, annulation refusés" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L28 : méthode des déplacements en six sous-graphes (étapes encapsulées) ≡ graphe pas à pas ≡ calcul direct ;
+    // interfaces typées et documentées, journal des corps, enregistrement en version 3 et réouverture
+    // -------------------------------------------------------------------------
+    {
+        std::string error;
+        Graph flat, sub;
+        TEST_CHECK(SG::build("methode-deplacements-2d", flat, &error), "Test L28: graphe pas à pas (" << error << ")");
+        TEST_CHECK(SG::build("methode-sous-graphes", sub, &error), "Test L28: graphe en sous-graphes (" << error << ")");
+        const std::set<std::string> expected = { "construire_modele", "assembler_k_f", "conditions_limites", "resoudre_deplacements",
+                                                 "reactions_efforts", "verifier_equilibre" };
+        TEST_CHECK(sub.subgraphs.size() == expected.size(), "Test L28: six sous-graphes");
+        for (const auto& d : sub.subgraphs)
+            TEST_CHECK(expected.count(d.id) && d.version == 1 && !d.documentation.empty() && !d.description.empty(),
+                       "Test L28: définition documentée « " << d.id << " »");
+        std::unique_ptr<NodeLibrary> holder;
+        const NodeLibrary& L = lib.forGraph(sub, holder);
+        const NodeDefinition* assembly = L.find("sub.assembler_k_f");
+        TEST_CHECK(assembly && !assembly->pure && assembly->output("K") && assembly->output("K")->objectType == "Matrix" && assembly->output("F")
+                       && assembly->output("numerotation") && assembly->input("model") && assembly->input("loads"),
+                   "Test L28: interface « Assembler K et F » (entrées modèle et charges ; sorties K, F, numérotation)");
+        const NodeDefinition* model = L.find("sub.construire_modele");
+        TEST_CHECK(model && model->input("q") && model->input("H") && model->input("cas") && model->input("combinaison") && model->output("model"),
+                   "Test L28: entrées q, H, cas, combinaison du modèle");
+        TEST_CHECK(L.validate(sub).empty() && L.warnings(sub).empty(), "Test L28: graphe valide, sans avertissement");
+        const auto ref = Runner(lib, flat, nullptr).run();
+        const auto rep = Runner(lib, sub, nullptr).run();
+        TEST_CHECK(ref.ok && rep.ok, "Test L28: exécutions (" << ref.message << " ; " << rep.message << ")");
+        TEST_CHECK(logContains(rep, "Graphe conforme au calcul direct : vrai") && logContains(rep, "[Assembler K et F] Étape 3"),
+                   "Test L28: conforme au calcul direct, journal des corps préfixé du nom du sous-graphe");
+        const auto* a = graphResult(flat, ref);
+        const auto* b = graphResult(sub, rep);
+        TEST_CHECK(a && b && a->K == b->K && a->F == b->F && a->d == b->d && a->R == b->R && a->elements.size() == b->elements.size(),
+                   "Test L28: K, F, d et R identiques au graphe pas à pas (mêmes opérations dans le même ordre)");
+        // Lignes de résultats imprimées (déplacements, réactions, équilibre, efforts internes) : identiques
+        auto unprefixed = [](const std::string& l) {
+            return l.rfind("[", 0) == 0 && l.find("] ") != std::string::npos ? l.substr(l.find("] ") + 2) : l;
+        };
+        std::multiset<std::string> printed;
+        for (const auto& l : rep.log) printed.insert(unprefixed(l));
+        int compared = 0;
+        for (const auto& l : ref.log)
+            if (l.rfind("Étape 6", 0) == 0 || l.rfind("Étape 7", 0) == 0 || l.rfind("Étape 8", 0) == 0)
+            {
+                TEST_CHECK(printed.count(l) > 0, "Test L28: ligne « " << l.substr(0, 60) << " » identique");
+                ++compared;
+            }
+        TEST_CHECK(compared >= 4, "Test L28: lignes de résultats comparées (" << compared << ")");
+        // Enregistrement (version 3) et réouverture
+        QTemporaryDir dir;
+        const QString file = dir.filePath(QStringLiteral("methode_sous_graphes.tsbp"));
+        Graph back;
+        QString ioError;
+        TEST_CHECK(saveFile(sub, file, &ioError) && loadFile(file, back, &ioError) && back.subgraphs.size() == 6,
+                   "Test L28: enregistré et relu (" << ioError.toStdString() << ")");
+        QFile f(file);
+        TEST_CHECK(f.open(QIODevice::ReadOnly) && f.readAll().contains("\"version\": 3"), "Test L28: fichier en version 3");
+        const auto again = Runner(lib, back, nullptr).run();
+        const auto* c = graphResult(back, again);
+        TEST_CHECK(again.ok && c && c->d == b->d && c->R == b->R, "Test L28: graphe relu exécuté, mêmes résultats");
+        std::cout << "[PASS] Test L28: méthode des déplacements en six sous-graphes ≡ graphe pas à pas (K, F, d, R à l'identique, " << compared
+                  << " lignes de résultats), conforme au calcul direct, version 3 relue" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L29 : graphe d'analyse d'un projet TSA importé (boîte « Importer un portique d'un projet TSA ») : projet lu une
+    // seule fois par exécution, résultat ≡ import et calcul direct en C++, projet non modifié
+    // -------------------------------------------------------------------------
+    {
+        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
+        QTemporaryDir tmp;
+        const QString original = root.filePath(QStringLiteral("TSA/examples/TSA_Demo_Hangar_60x40m.tsa"));
+        const QString copy = tmp.filePath(QStringLiteral("TSA_Demo_Hangar_60x40m.tsa"));
+        TEST_CHECK(tmp.isValid() && QFile::copy(original, copy), "Test L29: copie du projet");
+        const std::string h0 = RS::fileSha256(copy.toStdString());
+        std::vector<std::string> scopes;
+        TEST_CHECK(RS::listTsaScopes(copy.toStdString(), scopes) && !scopes.empty(), "Test L29: portées du projet");
+        S::Model2D ref;
+        std::string scope;
+        for (const auto& candidate : scopes)
+        {
+            S::Model2D m;
+            RS::TsaImportReport r;
+            if (RS::importTsaProject(copy.toStdString(), { candidate }, m, r) && !m.loadCases.empty())
+            {
+                ref = std::move(m);
+                scope = candidate;
+                break;
+            }
+        }
+        TEST_CHECK(!scope.empty(), "Test L29: portée importable avec un cas de charge");
+        const int caseId = ref.loadCases.front().id;
+        Graph g;
+        std::string error;
+        TEST_CHECK(SG::buildTsaImport(copy.toStdString(), scope, caseId, 0, g, &error), "Test L29: graphe d'analyse (" << error << ")");
+        TEST_CHECK(lib.validate(g).empty() && lib.warnings(g).empty(), "Test L29: graphe valide, sans avertissement");
+        const auto run = Runner(lib, g, nullptr).run();
+        TEST_CHECK(run.ok, "Test L29: graphe exécuté (" << run.message << ")");
+        const int importNode = nodeOfType(g, "struct.model_import_tsa");
+        TEST_CHECK(run.profile.count(importNode) && run.profile.at(importNode).executions == 1, "Test L29: projet lu une seule fois par exécution");
+        const auto* r = outputObject<RS::ResultObject>(run, nodeOfType(g, "struct.solve_direct"), "result");
+        const auto direct = S::solveLinearStatic(ref, { caseId, 0 });
+        TEST_CHECK(r && direct.success && r->value().d == direct.d && r->value().R == direct.R,
+                   "Test L29: résultat du graphe ≡ import et calcul direct en C++ (" << direct.message << ")");
+        TEST_CHECK(logContains(run, "Contrôle des données") && logContains(run, "Calcul : "), "Test L29: contrôle et calcul imprimés");
+        TEST_CHECK(RS::fileSha256(copy.toStdString()) == h0, "Test L29: projet non modifié");
+        std::cout << "[PASS] Test L29: graphe d'analyse d'un projet TSA (portée « " << scope << " », cas " << caseId
+                  << ") — lu une fois, ≡ calcul direct, projet intact" << std::endl;
+        ++passed;
+    }
+    // -------------------------------------------------------------------------
+    // TEST L30 : persistance JSON du modèle et des résultats — relecture à l'identique (portique de démonstration avec
+    // combinaison, poutre continue avec tassement, variante à rotule, ressort, masse et tous les types de charge, modèle
+    // importé de TSA avec traçabilité), résultats complets, blocs d'un graphe, valeurs non finies, refus motivés
+    // -------------------------------------------------------------------------
+    {
+        QTemporaryDir dir;
+        std::string error;
+        S::Model2D portal;
+        TEST_CHECK(RS::demoPortal({}, portal, &error), "Test L30: portique de démonstration (" << error << ")");
+        S::Model2D beam = RS::settlementBeam();
+        S::Model2D hinge = RS::settlementBeam();
+        hinge.name = "Variante à rotule et ressort (essai JSON)";
+        hinge.elements.front().releaseJ = true;
+        hinge.supports.back() = { 3, false, false, false, 0.0, 5000.0, 0.0 };
+        hinge.nodalMasses = { { 2, 1.5, 1.5, 0.25 } };
+        hinge.metadata = { { "source", "essai" }, { "remarque", "accents : é, °, ², « guillemets »" } };
+        S::LoadCase all;
+        all.id = 9;
+        all.name = "toutes les charges";
+        auto linear = S::linearLoad(1, -1.0, -2.0, 0.5, 2.5, S::LoadDirection::GlobalY);
+        linear.projected = true;
+        all.elementLoads = { S::uniformLoad(1, -3.0), linear, S::pointForce(1, 4.0, 0.3, S::LoadDirection::LocalX, true), S::pointMoment(2, 2.0, 1.0),
+                             S::thermalLoad(2, 15.0, 5.0), S::initialStrain(1, 1e-4, 2e-5), S::selfWeight(0, 1.35) };
+        all.nodalLoads = { { 3, 1.0, -2.0, 0.5 } };
+        hinge.loadCases.push_back(all);
+        hinge.combinations = { { 5, "1,35 q + 1,5 tout", { { 1, 1.35 }, { 9, 1.5 } } } };
+        TEST_CHECK(S::validate(hinge).ok(), "Test L30: variante valide (" << S::validate(hinge).text() << ")");
+        // Modèle importé d'un projet TSA (traçabilité : fichier, empreinte, date)
+        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
+        const QString tsa = dir.filePath(QStringLiteral("hangar.tsa"));
+        TEST_CHECK(QFile::copy(root.filePath(QStringLiteral("TSA/examples/TSA_Demo_Hangar_60x40m.tsa")), tsa), "Test L30: copie du projet TSA");
+        S::Model2D imported;
+        std::vector<std::string> tsaScopes;
+        TEST_CHECK(RS::listTsaScopes(tsa.toStdString(), tsaScopes), "Test L30: portées du projet TSA");
+        for (const auto& scope : tsaScopes)   // le hangar n'est pas plan : première portée plane importable
+        {
+            RS::TsaImportReport importReport;
+            if (RS::importTsaProject(tsa.toStdString(), { scope }, imported, importReport)) break;
+            imported = {};
+        }
+        TEST_CHECK(!imported.nodes.empty() && !imported.metadata.empty(), "Test L30: modèle importé d'une portée plane, avec traçabilité");
+        for (const S::Model2D* m : { &portal, &beam, &hinge, &imported })
+        {
+            S::Model2D back;
+            TEST_CHECK(RS::modelFromJson(RS::modelToJson(*m), back, &error) && back == *m, "Test L30: modèle « " << m->name << " » relu à l'identique (" << error << ")");
+        }
+        // Résultats complets : K, système réduit, résolution, diagrammes, équilibre
+        const std::pair<const S::Model2D*, S::LoadSelection> runs[] = { { &portal, { 1, 1 } }, { &beam, { 2, 0 } }, { &hinge, { 9, 0 } }, { &hinge, { 1, 5 } } };
+        for (const auto& [m, selection] : runs)
+        {
+            const auto res = S::solveLinearStatic(*m, selection);
+            TEST_CHECK(res.success && !res.elements.empty(), "Test L30: calcul de « " << m->name << " » (" << res.message << ")");
+            S::AnalysisResult2D back;
+            TEST_CHECK(RS::resultFromJson(RS::resultToJson(res), back, &error) && back == res, "Test L30: résultat de « " << m->name << " » relu à l'identique (" << error << ")");
+        }
+        const auto mechanism = S::solveLinearStatic(RS::unstableBeam(), { 1, 0 });
+        S::AnalysisResult2D mechanismBack;
+        TEST_CHECK(!mechanism.success && RS::resultFromJson(RS::resultToJson(mechanism), mechanismBack, &error) && mechanismBack == mechanism,
+                   "Test L30: résultat en échec (diagnostic du mécanisme) relu à l'identique (" << error << ")");
+        // Valeurs non finies
+        S::Model2D odd = portal;
+        odd.nodes[0].x = std::numeric_limits<double>::infinity();
+        odd.nodes[1].x = -std::numeric_limits<double>::infinity();
+        odd.nodes[1].y = std::numeric_limits<double>::quiet_NaN();
+        S::Model2D oddBack;
+        TEST_CHECK(RS::modelFromJson(RS::modelToJson(odd), oddBack, &error) && std::isinf(oddBack.nodes[0].x) && oddBack.nodes[0].x > 0
+                       && std::isinf(oddBack.nodes[1].x) && oddBack.nodes[1].x < 0 && std::isnan(oddBack.nodes[1].y),
+                   "Test L30: NaN et ±∞ conservés");
+        // Fichiers
+        const std::string modelPath = dir.filePath(QStringLiteral("portique.json")).toStdString();
+        S::Model2D fromFile;
+        TEST_CHECK(RS::saveModelJson(portal, modelPath, &error) && RS::loadModelJson(modelPath, fromFile, &error) && fromFile == portal,
+                   "Test L30: modèle enregistré puis relu (" << error << ")");
+        TEST_CHECK(!RS::saveModelJson(portal, dir.filePath(QStringLiteral("absent/portique.json")).toStdString(), &error) && error.find("écriture impossible") != std::string::npos,
+                   "Test L30: écriture impossible signalée");
+        // Refus motivés
+        const QByteArray good = RS::modelToJson(portal);
+        auto refusal = [&](const QByteArray& json) {
+            S::Model2D m;
+            std::string why;
+            return RS::modelFromJson(json, m, &why) ? std::string() : why;
+        };
+        auto edited = [&](const std::function<void(QJsonObject&)>& change) {
+            QJsonObject top = QJsonDocument::fromJson(good).object();
+            QJsonObject model = top.value(QStringLiteral("model")).toObject();
+            change(model);
+            top[QStringLiteral("model")] = model;
+            return QJsonDocument(top).toJson();
+        };
+        TEST_CHECK(refusal("pas du JSON").find("JSON illisible") != std::string::npos, "Test L30: document illisible refusé");
+        TEST_CHECK(refusal(RS::resultToJson(S::solveLinearStatic(portal, { 1, 0 }))).find("n'est pas au format") != std::string::npos,
+                   "Test L30: résultat lu comme modèle refusé");
+        QByteArray future = good;
+        future.replace("\"version\": 1", "\"version\": 2");
+        TEST_CHECK(refusal(future).find("plus récente") != std::string::npos, "Test L30: version future refusée");
+        const std::string missing = refusal(edited([](QJsonObject& m) {
+            QJsonArray supports = m[QStringLiteral("supports")].toArray();
+            QJsonObject first = supports[0].toObject();
+            first.remove(QStringLiteral("fixUx"));
+            supports[0] = first;
+            m[QStringLiteral("supports")] = supports;
+        }));
+        TEST_CHECK(missing == "model.supports[0].fixUx : champ manquant", "Test L30: champ manquant signalé avec son chemin (" << missing << ")");
+        const std::string type = refusal(edited([](QJsonObject& m) {
+            QJsonArray elements = m[QStringLiteral("elements")].toArray();
+            QJsonObject first = elements[0].toObject();
+            QJsonObject section = first[QStringLiteral("section")].toObject();
+            section[QStringLiteral("A")] = QStringLiteral("grande");
+            first[QStringLiteral("section")] = section;
+            elements[0] = first;
+            m[QStringLiteral("elements")] = elements;
+        }));
+        TEST_CHECK(type == "model.elements[0].section.A : nombre attendu", "Test L30: mauvais type signalé avec son chemin (" << type << ")");
+        const std::string enumeration = refusal(edited([](QJsonObject& m) {
+            QJsonArray cases = m[QStringLiteral("loadCases")].toArray();
+            QJsonObject first = cases[0].toObject();
+            QJsonArray loads = first[QStringLiteral("elementLoads")].toArray();
+            QJsonObject load = loads[0].toObject();
+            load[QStringLiteral("type")] = QStringLiteral("vent");
+            loads[0] = load;
+            first[QStringLiteral("elementLoads")] = loads;
+            cases[0] = first;
+            m[QStringLiteral("loadCases")] = cases;
+        }));
+        TEST_CHECK(enumeration.find("type de charge inconnu « vent »") != std::string::npos, "Test L30: énumération inconnue refusée (" << enumeration << ")");
+        // Blocs d'un graphe : modèle enregistré puis relu, résultat archivé puis relu, comparés au calcul d'origine
+        Graph g;
+        Builder b { g, lib };
+        const QString modelFile = dir.filePath(QStringLiteral("graphe_modele.json")), resultFile = dir.filePath(QStringLiteral("graphe_resultat.json"));
+        const int start = b.node("event.start");
+        const int demo = b.node("struct.model_demo_portal");
+        const int save = b.node("struct.model_save_json", { { "path", modelFile.toStdString() } });
+        const int load = b.node("struct.model_load_json", { { "path", modelFile.toStdString() } });
+        const int solved = b.node("struct.solve_direct", { { "case", 1LL } });
+        const int reloaded = b.node("struct.solve_direct", { { "case", 1LL } });
+        const int archive = b.node("struct.result_save_json", { { "path", resultFile.toStdString() } });
+        const int read = b.node("struct.result_load_json", { { "path", resultFile.toStdString() } });
+        const int cmpModel = b.node("struct.compare_results"), cmpArchive = b.node("struct.compare_results");
+        const int p1 = b.node("debug.print"), p2 = b.node("debug.print");
+        b.link(demo, "model", save, "model");
+        b.link(load, "model", reloaded, "model");
+        b.link(demo, "model", solved, "model");
+        b.link(solved, "result", archive, "result");
+        b.link(reloaded, "result", cmpModel, "result");
+        b.link(solved, "result", cmpModel, "reference");
+        b.link(read, "result", cmpArchive, "result");
+        b.link(solved, "result", cmpArchive, "reference");
+        b.link(cmpModel, "passed", p1, "value");
+        b.link(cmpArchive, "passed", p2, "value");
+        b.then(start, save);
+        b.then(save, archive);
+        b.then(archive, p1);
+        b.then(p1, p2);
+        TEST_CHECK(b.error.empty(), "Test L30: graphe des blocs JSON (" << b.error << ")");
+        const auto run = Runner(lib, g, nullptr).run();
+        TEST_CHECK(run.ok && run.log.size() >= 4, "Test L30: graphe exécuté (" << run.message << ")");
+        TEST_CHECK(run.values.at(cmpModel).at("passed") == Value(true) && run.values.at(cmpArchive).at("passed") == Value(true),
+                   "Test L30: modèle relu et résultat archivé ≡ calcul d'origine");
+        std::cout << "[PASS] Test L30: persistance JSON — 4 modèles et 5 résultats relus à l'identique, NaN et ±∞, blocs d'un graphe, "
+                     "refus motivés (illisible, autre format, version future, champ manquant, mauvais type, énumération inconnue)"
+                  << std::endl;
         ++passed;
     }
     return true;

@@ -31,6 +31,7 @@ bool catalogMaterial(const std::string& name, S::Material& out, std::string* err
     out.E = m.E / 1000.0;                                          // Pa → kN/m²
     out.alpha = m.thermalCoeff;                                    // 1/K = 1/°C
     out.unitWeight = m.density * TSA::Units::kGravity / 1000.0;     // kg/m³ × m/s² → kN/m³
+    out.density = m.density / 1000.0;                               // kg/m³ → t/m³ (dynamique)
     return true;
 }
 

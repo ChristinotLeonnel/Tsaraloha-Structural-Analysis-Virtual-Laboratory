@@ -5,6 +5,7 @@
 
 #include "NodeHelpers.h"
 #include "ResultBoard.h"
+#include "StructuralJson.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -382,6 +383,73 @@ void registerControlNodes(NodeLibrary& lib)
                 return writeFile(c, base + QStringLiteral("_deplacements.csv"), d.str()) && writeFile(c, base + QStringLiteral("_reactions.csv"), re.str())
                        && writeFile(c, base + QStringLiteral("_elements.csv"), el.str()) && c.fire("then");
             });
+
+    // --- Persistance JSON du modèle et des résultats (StructuralJson.h) ----------------------------------------------
+    constexpr char kSrcJson[] = "TSALab/lab/Research/Structural/StructuralJson.cpp";
+    const std::string jsonFormat = "Format versionné (version 1), unités du cœur scientifique rappelées dans le fichier, réels écrits au plus court "
+                                   "qui se relit exactement (NaN et ±∞ en texte) : relu, le contenu est identique à l'enregistré. Lecture stricte : "
+                                   "autre format, version future, champ manquant ou de mauvais type refusés avec le chemin du champ ; aucune "
+                                   "valeur par défaut substituée. Écriture d'un bloc : un échec ne laisse pas de fichier tronqué.";
+    lib.add(actionBlock("struct.model_save_json", "Enregistrer le modèle (JSON)", kModel,
+                        "Écrit le modèle de portique (nœuds, éléments, appuis, ressorts, rotules, cas, combinaisons, masses, traçabilité) en JSON.",
+                        { object("model", "Modèle", Type::Model), data("path", "Fichier .json", VT::Text, std::string()) }, {},
+                        "Format « tsalab-model2d ». " + jsonFormat, kSrcJson),
+            [](ExecutionContext& c) {
+                const S::Model2D* m = modelIn(c);
+                const std::string path = c.text("path");
+                if (!m || c.failed()) return false;
+                if (path.empty()) return c.fail("fichier non renseigné");
+                std::string error;
+                if (!saveModelJson(*m, path, &error)) return c.fail(error);
+                c.log("Modèle enregistré : " + path);
+                return c.fire("then");
+            });
+    {
+        NodeDefinition def = pureBlock("struct.model_load_json", "Lire un modèle (JSON)", kModel, "Relit un modèle de portique enregistré en JSON.",
+                                       { data("path", "Fichier .json", VT::Text, std::string()) }, { object("model", "Modèle", Type::Model) },
+                                       "Format « tsalab-model2d ». " + jsonFormat + " Le fichier est relu à chaque exécution.", kSrcJson);
+        def.cacheable = false;   // le fichier peut changer entre deux exécutions
+        lib.add(def, [](ExecutionContext& c) {
+            const std::string path = c.text("path");
+            if (c.failed()) return false;
+            S::Model2D m;
+            std::string error;
+            if (!loadModelJson(path, m, &error)) return c.fail(error);
+            c.setOutput("model", make<ModelObject>(std::move(m)));
+            return true;
+        });
+    }
+    lib.add(actionBlock("struct.result_save_json", "Enregistrer le résultat (JSON)", kControl,
+                        "Archive un résultat complet en JSON : modèle, chargement, DDL, K, F, système réduit, résolution, d, R, ressorts, "
+                        "efforts et diagrammes, équilibre.",
+                        { object("result", "Résultat", Type::Result), data("path", "Fichier .json", VT::Text, std::string()) }, {},
+                        "Format « tsalab-result2d ». " + jsonFormat + " Un résultat en échec s'enregistre aussi (diagnostic du mécanisme).", kSrcJson),
+            [](ExecutionContext& c) {
+                const S::AnalysisResult2D* r = resultIn(c);
+                const std::string path = c.text("path");
+                if (!r || c.failed()) return false;
+                if (path.empty()) return c.fail("fichier non renseigné");
+                std::string error;
+                if (!saveResultJson(*r, path, &error)) return c.fail(error);
+                c.log("Résultat enregistré : " + path);
+                return c.fire("then");
+            });
+    {
+        NodeDefinition def = pureBlock("struct.result_load_json", "Lire un résultat (JSON)", kControl,
+                                       "Relit un résultat archivé en JSON (visualisation, comparaison à un nouveau calcul).",
+                                       { data("path", "Fichier .json", VT::Text, std::string()) }, { object("result", "Résultat", Type::Result) },
+                                       "Format « tsalab-result2d ». " + jsonFormat + " Le fichier est relu à chaque exécution.", kSrcJson);
+        def.cacheable = false;
+        lib.add(def, [](ExecutionContext& c) {
+            const std::string path = c.text("path");
+            if (c.failed()) return false;
+            S::AnalysisResult2D r;
+            std::string error;
+            if (!loadResultJson(path, r, &error)) return c.fail(error);
+            c.setOutput("result", make<ResultObject>(std::move(r)));
+            return true;
+        });
+    }
 
     // --- Laboratoire de l'étudiant (composants expérimentaux, séparés des composants validés) ---------------
     {

@@ -19,6 +19,12 @@ Résultats (diagrammes 2D ; déformée dans le viewport via le dock Résultats),
 Réglages par défaut d'un projet sans réglages : Custom2D, plan du modèle, système exporté (non écrits dans le
 modèle tant que l'utilisateur ne les modifie pas). Vérifié en GUI 2026-10-08 (exemple Portique plan).
 
+## Programmation structurelle Blueprint (2026-10-17, branche feature/blueprint-structurel)
+Status: IMPLEMENTED — science : FrameElement2D (rotules, masses), méthode directe (ressorts), dynamique pédagogique,
+charges roulantes ; laboratoire : 127 blocs en 8 catégories, exemples (dont la méthode en six sous-graphes), import
+de projets TSA (calcul, bloc, boîte d'aperçu), persistance JSON du modèle et des résultats. Vérifié : science 22/22,
+laboratoire 27/27 (Debug, 2026-10-17), essai de l'interface réelle (UIA) 28/28. Inventaire : docs/AUDIT_FONCTIONNALITES.md.
+
 ## Phase 8 (2026-10-08)
 Status: IMPLEMENTED — science/ : OpenSeesPlanarSolver (C++ pur, processus OpenSees) + pont commun MddBridge ; le
 banc ignore un solveur indisponible. Application : assistant IA, débogueur Blueprint, plugins (Aide ▸ Plugins chargés).

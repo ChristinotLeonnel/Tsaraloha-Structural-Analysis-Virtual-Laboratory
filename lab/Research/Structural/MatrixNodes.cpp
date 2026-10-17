@@ -488,6 +488,58 @@ void registerMathNodes(NodeLibrary& lib)
                 c.setOutput("report", std::string(tsalab::numerics::solverMethodName(s.method)) + " : " + r.message + " Résidu relatif " + num(r.relativeResidual, 3) + ".");
                 return true;
             });
+    lib.add(pureBlock("matrix.compare_solvers", "Comparer deux solveurs", kMath,
+                      "Résout le même système K·x = f par deux méthodes et compare solutions, résidus, pivots et itérations.",
+                      { object("K", "K", Type::Matrix), object("f", "f", Type::Vector), data("method_a", "Méthode A (cholesky, lu, cg)", VT::Text, std::string("cholesky")),
+                        data("method_b", "Méthode B (cholesky, lu, cg)", VT::Text, std::string("cg")), data("tolerance", "Tolérance du gradient conjugué", VT::Real, 1e-10) },
+                      { object("x_a", "x (A)", Type::Vector), object("x_b", "x (B)", Type::Vector), data("deviation", "Écart max|xA − xB| / max|xA|", VT::Real),
+                        data("residual_a", "Résidu relatif A", VT::Real), data("residual_b", "Résidu relatif B", VT::Real),
+                        data("iterations_b", "Itérations B", VT::Integer), object("history_b", "Résidus de B", Type::Curve), data("report", "Rapport", VT::Text) },
+                      "Même système, deux méthodes (LU à pivot partiel, Cholesky, gradient conjugué préconditionné de Jacobi) : écart relatif des "
+                      "solutions, résidus ‖K·x − f‖/‖f‖ recalculés, pivots extrêmes (méthodes directes), itérations et historique des résidus "
+                      "(gradient conjugué : la tolérance est celle de l'arrêt, ‖r‖/‖f‖). Les durées ne sont pas comparées (elles dépendent de la "
+                      "machine). Refus motivé si une méthode échoue (pivot nul ou négatif, non-convergence), avec le nom de la méthode.",
+                      kSrcLinAlg),
+            [](ExecutionContext& c) {
+                const LabeledMatrix* K = matrixIn(c, "K");
+                const LabeledVector* f = vectorIn(c, "f");
+                const std::string ta = c.text("method_a"), tb = c.text("method_b");
+                const double tol = c.real("tolerance");
+                if (!K || !f || c.failed()) return false;
+                if (K->matrix.rows != K->matrix.cols || K->matrix.rows != static_cast<int>(f->vector.size()))
+                    return c.fail("dimensions incompatibles : K est " + dims(K->matrix) + ", f a " + std::to_string(f->vector.size()) + " composantes");
+                tsalab::numerics::SolverSettings sa, sb;
+                if (!parseMethod(ta, sa.method)) return c.fail("méthode A inconnue « " + ta + " » (cholesky, lu, cg)");
+                if (!parseMethod(tb, sb.method)) return c.fail("méthode B inconnue « " + tb + " » (cholesky, lu, cg)");
+                if (!(tol > 0.0)) return c.fail("tolérance du gradient conjugué non positive");
+                sa.tolerance = sb.tolerance = tol;
+                Vector xa, xb;
+                const auto ra = tsalab::numerics::solve(K->matrix, f->vector, xa, sa);
+                const auto rb = tsalab::numerics::solve(K->matrix, f->vector, xb, sb);
+                if (!ra.success) return c.fail(std::string("méthode A (") + tsalab::numerics::solverMethodName(sa.method) + ") : " + ra.message);
+                if (!rb.success) return c.fail(std::string("méthode B (") + tsalab::numerics::solverMethodName(sb.method) + ") : " + rb.message);
+                double diff = 0.0, scale = 0.0;
+                for (std::size_t k = 0; k < xa.size(); ++k) diff = std::max(diff, std::abs(xa[k] - xb[k])), scale = std::max(scale, std::abs(xa[k]));
+                const double deviation = scale > 0.0 ? diff / scale : diff;
+                std::vector<double> it, hist;
+                for (std::size_t k = 0; k < rb.residualHistory.size(); ++k) it.push_back(static_cast<double>(k)), hist.push_back(rb.residualHistory[k]);
+                auto line = [](const char* tag, tsalab::numerics::SolverMethod m, const tsalab::numerics::SolverReport& r) {
+                    std::string s = std::string(tag) + " " + tsalab::numerics::solverMethodName(m) + " : résidu " + num(r.relativeResidual, 3) + ", itérations "
+                                    + std::to_string(r.iterations);
+                    if (m != tsalab::numerics::SolverMethod::ConjugateGradient) s += ", pivots " + num(r.minPivot, 3) + " à " + num(r.maxPivot, 3);
+                    return s;
+                };
+                c.setOutput("x_a", vectorOut(std::move(xa), K->cols, std::string("x (") + tsalab::numerics::solverMethodName(sa.method) + ")"));
+                c.setOutput("x_b", vectorOut(std::move(xb), K->cols, std::string("x (") + tsalab::numerics::solverMethodName(sb.method) + ")"));
+                c.setOutput("deviation", deviation);
+                c.setOutput("residual_a", ra.relativeResidual);
+                c.setOutput("residual_b", rb.relativeResidual);
+                c.setOutput("iterations_b", static_cast<long long>(rb.iterations));
+                c.setOutput("history_b", make<CurveObject>(CurveData { std::move(it), std::move(hist), "résidus de la méthode B", "itération", "‖r‖/‖f‖" }));
+                c.setOutput("report", line("A", sa.method, ra) + "\n" + line("B", sb.method, rb) + "\nÉcart relatif des solutions : " + num(deviation, 3));
+                return true;
+            });
+
     lib.add(pureBlock("matrix.lu", "Décomposition LU", kMath, "P·A = L·U (élimination de Gauss à pivot partiel).",
                       { object("A", "A", Type::Matrix) },
                       { object("L", "L", Type::Matrix), object("U", "U", Type::Matrix), object("P", "P", Type::Matrix), data("min_pivot", "Pivot minimal", VT::Real) },

@@ -158,6 +158,18 @@ Types des liaisons : `StructuralModel`, `Node2D`, `Material`, `Section2D`, `Supp
   liens, commentaires ; les objets calculés ne sont jamais enregistrés).
 - **Exécution en tâche de fond** : un graphe qui n'utilise pas le projet (tous les graphes de programmation
   structurelle) s'exécute sans bloquer l'interface ; ■ Arrêter l'interrompt.
+- **Modèle et résultats en JSON** : blocs « Enregistrer le modèle (JSON) », « Lire un modèle (JSON) », « Enregistrer le
+  résultat (JSON) », « Lire un résultat (JSON) » (`lab/Research/Structural/StructuralJson.*`, formats versionnés
+  `tsalab-model2d` et `tsalab-result2d`) : relecture à l'identique (NaN et ±∞ compris), lecture stricte qui refuse une
+  version future, un champ manquant ou de mauvais type en donnant le chemin du champ (L30).
+- **Sous-graphes** (blocs composés réutilisables, `TSA/docs/BLUEPRINT.md`) : menu Sous-graphes ▸ Créer un sous-graphe
+  depuis la sélection ; double-clic sur l'instance pour ouvrir son corps ; « Retour au graphe parent » enregistre une
+  nouvelle version et met à jour les instances ; entrées et sorties typées (Propriétés…), fichiers `.tsbps`. Exemple
+  **Methode_Des_Deplacements_2D en sous-graphes** : les étapes 1 à 8 encapsulées en six sous-graphes documentés
+  (construire le modèle, assembler K et F, conditions aux limites, résoudre les déplacements, réactions et efforts
+  internes, vérifier l'équilibre). Les variables K et F de la boucle d'assemblage restent internes à son corps (une
+  exécution imbriquée a ses propres variables) et sortent par des broches typées. L28 : K, F, d et R identiques au
+  graphe pas à pas, conforme au calcul direct, fichier version 3 relu.
 
 ## 8. Mode 1 — utilisation directe
 
@@ -177,9 +189,11 @@ Composants expérimentaux (séparés des composants validés : une modification 
 validés) :
 - **Itération de Jacobi** : x_suivant = D⁻¹·(f − (K − D)·x) ; converge si K est à diagonale strictement dominante
   (souvent lentement, voire pas du tout, pour une rigidité de portique).
-- **Itération de Gauss-Seidel (exercice)** : à écrire dans `lab/Research/Structural/ControlNodes.cpp` (fonction
-  `gaussSeidelSweep`). Tant qu'elle n'est pas écrite, le bloc échoue avec un message explicite. Une fois écrite, le test
-  L19 vérifie qu'elle converge vers la solution de référence.
+- **Itération de Gauss-Seidel** : `gaussSeidelSweep` (`lab/Research/Structural/ControlNodes.cpp`), balayage
+  x_i ← (f_i − Σ_{j≠i} K_ij·x_j) / K_ii avec les valeurs déjà mises à jour. Exemple « Solveur de l'étudiant
+  (Gauss-Seidel) » : itérations jusqu'à un résidu de 1e-10, comparées à Cholesky (1e-8) ; L19 vérifie un balayage
+  calculé à la main et la convergence (954 itérations sur le portique : bloc toujours expérimental, la convergence
+  dépend du conditionnement).
 
 Consulter la logique d'un bloc pré-codé : F1 ▸ onglet « Code source » (fichier présent sur un poste de développement).
 
@@ -203,7 +217,9 @@ Mission (§ 9) et tests :
 Autres tests : S7 (classe FrameElement2D : matrices, corps rigides, efforts d'encastrement des tables, validation),
 S16 (moment nodal, combinaisons, portique à versants ≡ MetDeDeplacement), L15 (bibliothèque : typage, documentation,
 sources, statut), L19 (mode 2), L20 (mode 1, modèle par blocs ≡ C++), L22 (blocs mathématiques, exports, courbes) ;
-TSA test 391 (objets typés, réutilisation, variables, cycles, dépendances, fichier v2, copier-coller).
+TSA test 391 (objets typés, réutilisation, variables, cycles, dépendances, fichier v2, copier-coller) ; S17 et S18
+(rotules, ressorts), S19 à S22 (dynamique pédagogique, charges roulantes), L23 à L26 (exemples correspondants,
+enregistrement), L27 (import de projets TSA), L28 (méthode en sous-graphes) ; TSA tests 392 et 393 (sous-graphes).
 Implémentation indépendante : MetDeDeplacement (moteur de production Custom2D, déjà validé contre OpenSees), par
 `toMdd` dans `science/tests/StructuralTests.cpp`.
 
@@ -211,11 +227,11 @@ Implémentation indépendante : MetDeDeplacement (moteur de production Custom2D,
 
 | Sujet | État |
 | :--- | :--- |
-| Sous-graphes (blocs composés réutilisables) | **non fait** : les étapes sont regroupées par des commentaires (cadres titrés), pas encore encapsulées dans des blocs composés |
-| Modèle importé du projet TSA | **non fait** : les modèles viennent des blocs, du portique de démonstration ou des exemples ; l'import d'un projet (plan d'un portique) est à écrire sur l'adaptateur Custom2D |
-| Rotules d'extrémité, appuis élastiques, barres articulées | non pris en charge par `FrameElement2D` (présents dans MetDeDeplacement) |
+| Sous-graphes (blocs composés réutilisables) | **fait** (17/10/2026) : moteur et éditeur partagés, exemple en six sous-graphes (L28, TSA 392–393) ; import d'une définition présente au contenu différent : remplacée par celle du fichier, signalé, annulable |
+| Modèle importé du projet TSA | **fait côté calcul** : `importTsaProject` et le bloc `struct.model_import_tsa` passent par le chemin d'analyse plane de TSA (lecture seule, empreinte SHA-256 contrôlée, rapport importé / converti / ignoré, refus motivés) ; L27. Boîte **Blueprint ▸ Importer un portique d'un projet TSA…** : portée, aperçu annulable, rapport, choix du cas, graphe d'analyse (projet lu une fois par exécution) ; L29 |
+| Rotules d'extrémité, appuis élastiques, barres articulées | **faits** : condensation statique des rotules, rotations libres éliminées, ressorts ajoutés à K (S17, S18, L23, L24) |
 | Grands systèmes | matrices pleines (pédagogie) ; conditionnement et modes jusqu'à 150 et 300 équations ; OpenSees reste le moteur des grands modèles |
-| Actions sismiques, dynamiques, trafic | non implémentées (§ 4) |
+| Actions sismiques, dynamiques, trafic | **modules pédagogiques** séparés du calcul statique de TSA (ADR-022 inchangé) : masses, analyse modale, Newmark, accélérogramme **fourni par l'utilisateur** uniquement (aucun accélérogramme fabriqué ; un signal harmonique d'essai est signalé comme non réel), spectre saisi (SRSS / CQC), charges roulantes en calculs statiques successifs (**pas** d'interaction véhicule-pont) ; S19 à S22, L23, L25 |
 
 ## 12. Où est le code
 
@@ -225,5 +241,7 @@ Implémentation indépendante : MetDeDeplacement (moteur de production Custom2D,
 | Objets typés, blocs | `lab/Research/Structural/` (`StructuralObjects`, `*Nodes.cpp`, `StructuralLibrary`, `StructuralModels`, `ResultBoard`) |
 | Graphes d'exemple | `lab/Research/Examples/StructuralGraphs.*` |
 | Vues (matrice, diagrammes, portique) | `lab/LabUI/StructuralViewers.*` |
-| Tests du laboratoire | `lab/Tests/StructuralLabTests.cpp` (L15 à L22) |
+| Tests du laboratoire | `lab/Tests/StructuralLabTests.cpp` (L15 à L28) |
+| Import de projets TSA | `lab/Research/Structural/TsaImport.*` |
+| Dynamique, charges roulantes (science) | `science/include/tsalab/structural/` (`Dynamics2D.h`, `MovingLoads2D.h`), tests `science/tests/DynamicsTests.cpp` |
 | Moteur et éditeur partagés (TSA) | `TSA/src/Blueprint/`, `TSA/src/UI/Blueprint/` (voir `TSA/docs/BLUEPRINT.md`) |
