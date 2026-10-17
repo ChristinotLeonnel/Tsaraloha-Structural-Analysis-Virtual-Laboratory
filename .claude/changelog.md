@@ -1,6 +1,6 @@
 # Changelog — TSALab
 
-## 2026-10-17 (mission « Terminer les fonctionnalités incomplètes » — branche feature/blueprint-structurel, non poussée)
+## 2026-10-17 (mission « Terminer les fonctionnalités incomplètes » — branche feature/blueprint-structurel, fusionnée dans main)
 
 ### Added
 - Rotules d'extrémité (condensation statique, rotations libres éliminées) et appuis élastiques dans `tsalab::structural`
@@ -30,6 +30,7 @@
 - Debug : science 22/22, laboratoire 27/27 (L4 à L30), TSA 393/393 ; essai de TSALab réel (UIA) 28/28 : sous-graphes
   (double-clic sur une instance, fil d'Ariane, propriétés, retour, exécution) et import (refus motivé, aperçu, graphe
   d'analyse exécuté, projet intact) ; réglages utilisateur restaurés à l'identique.
+- Release : TSA 393/393, science 22/22, laboratoire 27/27, essai de l'interface 28/28.
 
 ## 2026-10-09 (Claude Code co-ingénieur par MCP)
 

@@ -87,7 +87,10 @@ Légende : **fait** · **partiel** (ce qui manque est dit) · **non fait** (caus
 | TSALab, Debug : science | 22 / 22 |
 | TSALab, Debug : laboratoire (L4 à L30) | 27 / 27 |
 | Couches (ADR-024) | `check_layers` : 0 violation |
-| Release (TSA, TSALab) et essais de l'interface (UIA) | voir le rapport final de la mission (`TSALab/.claude/changelog.md`, 17/10/2026) |
+| TSA, Release | 393 / 393 |
+| TSALab, Release : science, laboratoire | 22 / 22, 27 / 27 |
+| Essai de TSALab réel (UI Automation), Debug et Release | 28 / 28 vérifications chacun : sous-graphes (double-clic sur une instance, fil d'Ariane, propriétés, retour « inchangé », exécution conforme, journal des corps) ; import (refus motivé d'une portée non plane, choix de la portée, aperçu, rapport et empreinte, graphe d'analyse exécuté, projet intact) |
+| Réglages de l'utilisateur | sauvegardés puis restaurés à l'identique autour de chaque essai (4 clés du registre, shortcut.txt) |
 
 ## 8. Ce qui reste incomplet, et pourquoi
 
