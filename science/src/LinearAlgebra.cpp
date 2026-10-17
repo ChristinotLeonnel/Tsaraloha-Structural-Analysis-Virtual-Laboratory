@@ -549,6 +549,36 @@ EigenResult generalizedEigen(const Matrix& K, const Matrix& M, int maxModes)
     return res;
 }
 
+bool CholeskyFactorization::factor(const Matrix& K, double pivotTolerance)
+{
+    success = false;
+    message.clear();
+    failedEquation = -1;
+    if (K.rows != K.cols)
+    {
+        message = "matrice non carrée";
+        return false;
+    }
+    L = K;
+    if (!choleskyFactor(L, pivotTolerance * std::max(maxDiagonal(K), std::numeric_limits<double>::min()), &minPivot, &maxPivot, &failedEquation))
+    {
+        message = "pivot nul ou négatif à l'équation " + std::to_string(failedEquation) + " : matrice non définie positive";
+        L = Matrix {};
+        return false;
+    }
+    success = true;
+    return true;
+}
+
+Vector CholeskyFactorization::solve(const Vector& f) const
+{
+    if (!success || static_cast<int>(f.size()) != L.rows) return {};
+    Vector x = f;
+    forwardSubstitute(L, x);
+    backSubstituteTransposed(L, x);
+    return x;
+}
+
 double conditionNumber(const Matrix& a)
 {
     const EigenResult e = symmetricEigen(a, 1e-10, 60);

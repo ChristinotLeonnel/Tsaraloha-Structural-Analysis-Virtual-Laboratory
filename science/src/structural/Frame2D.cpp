@@ -91,6 +91,34 @@ int Model2D::elementCount(int nodeId) const
     return n;
 }
 
+bool Model2D::rotationFree(int nodeId) const
+{
+    const SupportCondition* s = support(nodeId);
+    if (s && (s->fixRz || s->kRz > 0.0)) return false;
+    int count = 0;
+    for (const auto& e : elements)
+    {
+        if (e.nodeI == nodeId)
+        {
+            ++count;
+            if (!e.releaseI) return false;
+        }
+        if (e.nodeJ == nodeId)
+        {
+            ++count;
+            if (!e.releaseJ) return false;
+        }
+    }
+    return count > 0;
+}
+
+std::string Model2D::metadataValue(const std::string& key) const
+{
+    for (const auto& [k, v] : metadata)
+        if (k == key) return v;
+    return {};
+}
+
 double Model2D::extent() const
 {
     if (nodes.empty()) return 0.0;
@@ -352,10 +380,27 @@ ValidationReport validate(const Model2D& model)
     ids.clear();
     for (const auto& s : model.supports)
     {
+        const std::string who = "appui du nœud " + std::to_string(s.node);
         if (!model.node(s.node)) r.errors.push_back("appui sur le nœud " + std::to_string(s.node) + " inexistant");
         if (!ids.insert(s.node).second) r.errors.push_back("plusieurs appuis sur le nœud " + std::to_string(s.node));
-        if (!s.fixUx && !s.fixUy && !s.fixRz) r.warnings.push_back("appui du nœud " + std::to_string(s.node) + " sans DDL bloqué");
+        if (!finite(s.kUx) || !finite(s.kUy) || !finite(s.kRz) || s.kUx < 0.0 || s.kUy < 0.0 || s.kRz < 0.0)
+            r.errors.push_back(who + " : rigidité de ressort négative ou non finie");
+        if (!s.fixUx && !s.fixUy && !s.fixRz && !s.hasSpring()) r.warnings.push_back(who + " sans DDL bloqué ni ressort");
+        if ((s.fixUx && s.kUx > 0.0) || (s.fixUy && s.kUy > 0.0) || (s.fixRz && s.kRz > 0.0))
+            r.warnings.push_back(who + " : ressort sur un DDL bloqué, sans effet (le DDL bloqué reprend tout)");
     }
+    for (const auto& m : model.nodalMasses)
+    {
+        if (!model.node(m.node)) r.errors.push_back("masse sur le nœud " + std::to_string(m.node) + " inexistant");
+        if (!finite(m.mx) || !finite(m.my) || !finite(m.jz) || m.mx < 0.0 || m.my < 0.0 || m.jz < 0.0)
+            r.errors.push_back("masse du nœud " + std::to_string(m.node) + " négative ou non finie");
+    }
+    for (const auto& e : model.elements)
+        if (!finite(e.material.density) || e.material.density < 0.0)
+            r.errors.push_back("élément " + std::to_string(e.id) + " : masse volumique négative ou non finie");
+    for (const auto& n : model.nodes)
+        if (model.rotationFree(n.id))
+            r.warnings.push_back("nœud " + std::to_string(n.id) + " : toutes les barres y sont articulées, sans appui en rotation — rotation éliminée du système");
     for (const auto& n : model.nodes)
         if (model.elementCount(n.id) == 0) r.warnings.push_back("nœud " + std::to_string(n.id) + " relié à aucun élément");
     ids.clear();

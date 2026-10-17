@@ -131,7 +131,11 @@ bool toMdd(const Model2D& m, const LoadCase& loads, mdd::Model& out)
         index[n.id] = static_cast<int>(out.nodes.size());
         mdd::Node x;
         x.x = n.x, x.y = n.y;
-        if (const auto* s = m.support(n.id)) x.fixX = s->fixUx, x.fixY = s->fixUy, x.fixRz = s->fixRz;
+        if (const auto* s = m.support(n.id))
+        {
+            x.fixX = s->fixUx, x.fixY = s->fixUy, x.fixRz = s->fixRz;
+            x.kX = s->kUx, x.kY = s->kUy, x.kRz = s->kRz;
+        }
         out.nodes.push_back(x);
     }
     for (const auto& e : m.elements)
@@ -139,6 +143,7 @@ bool toMdd(const Model2D& m, const LoadCase& loads, mdd::Model& out)
         mdd::Member b;
         b.i = index[e.nodeI], b.j = index[e.nodeJ];
         b.E = e.material.E, b.A = e.section.A, b.I = e.section.Iz;
+        b.releaseI = e.releaseI, b.releaseJ = e.releaseJ;
         out.members.push_back(b);
     }
     for (const auto& p : loads.nodalLoads) out.nodalLoads.push_back({ index[p.node], p.fx, p.fy, p.mz });
@@ -171,7 +176,11 @@ bool compareWithMdd(const Model2D& m, int caseId, const char* what)
     for (std::size_t k = 0; k < m.nodes.size(); ++k)
     {
         const auto d = r.nodeDisplacement(m.nodes[k].id);
-        const auto rr = r.nodeReaction(m.nodes[k].id);
+        // MetDeDeplacement : réaction d'un nœud d'appui = force totale de l'appui, ressort compris ; ici réaction des DDL
+        // bloqués et force des ressorts sont séparées
+        auto rr = r.nodeReaction(m.nodes[k].id);
+        const auto sp = r.nodeSpringForce(m.nodes[k].id);
+        for (int c = 0; c < 3; ++c) rr[static_cast<std::size_t>(c)] += sp[static_cast<std::size_t>(c)];
         for (int c = 0; c < 3; ++c)
         {
             dScale = std::max(dScale, std::abs(ref.displacements[k][static_cast<std::size_t>(c)]));
@@ -852,14 +861,213 @@ bool testCombinationsAndCrossCheck(int& passed)
     return true;
 }
 
+// =================================================================================================
+// S17 — rotules d'extrémité : condensation statique, poutre Gerber, treillis articulé (rotations éliminées)
+// =================================================================================================
+bool testReleases(int& passed)
+{
+    const double L = 6.0, q = 10.0;
+    {   // barre bi-encastrée articulée aux deux extrémités = poutre sur deux appuis
+        Builder b;
+        b.node(0, 0), b.node(L, 0);
+        b.element(1, 2);
+        b.m.elements.back().releaseI = b.m.elements.back().releaseJ = true;
+        b.support(1, true, true, true), b.support(2, true, true, true);
+        b.lc().elementLoads.push_back(uniformLoad(1, -q));
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S17 bi-articulée"), "S17");
+        CHECK_REL(r.nodeReaction(1)[1], q * L / 2.0, kExact, "S17: réaction qL/2");
+        CHECK_ABS(r.nodeReaction(1)[2], 0.0, 1e-9 * q * L * L, "S17: moment d'appui nul (rotule)");
+        CHECK_ABS(r.nodeReaction(2)[2], 0.0, 1e-9 * q * L * L, "S17: moment d'appui nul (rotule j)");
+        CHECK_REL(at(r.elements[0].diagram, L / 2.0)->M, q * L * L / 8.0, kExact, "S17: M(L/2) = qL²/8");
+        FrameElement2D el;
+        TEST_CHECK(makeElement(b.m, b.m.elements[0], el), "S17: élément");
+        std::vector<std::string> errors;
+        const auto loads = el.localLoads(r.loads.elementLoads, &errors);
+        const Vector de = el.elementLocalDisplacements(r.elements[0].dGlobal, loads);
+        CHECK_REL(de[2], -q * L * L * L / (24.0 * EI), kExact, "S17: rotation propre de l'élément en i = −qL³/(24EI)");
+        CHECK_REL(de[5], q * L * L * L / (24.0 * EI), kExact, "S17: rotation propre en j = +qL³/(24EI)");
+        const Matrix kc = el.localStiffness();
+        TEST_CHECK(kc(2, 2) == 0.0 && kc(5, 5) == 0.0, "S17: rigidité condensée — lignes des rotations libérées nulles");
+        // 12EI/L³ − 12EI/L³ : nul aux arrondis près (mouvement de corps rigide de la barre bi-articulée)
+        CHECK_ABS(kc(1, 1), 0.0, 1e-12 * 12.0 * EI / (L * L * L), "S17: rigidité transversale nulle pour une barre bi-articulée");
+        CHECK_REL(kc(0, 0), EA / L, kExact, "S17: rigidité axiale EA/L conservée");
+    }
+    {   // articulée en j : encastrée-appuyée (5qL/8, 3qL/8, −qL²/8), et MetDeDeplacement
+        Builder b;
+        b.node(0, 0), b.node(L, 0);
+        b.element(1, 2);
+        b.m.elements.back().releaseJ = true;
+        b.support(1, true, true, true), b.support(2, true, true, true);
+        b.lc().elementLoads.push_back(uniformLoad(1, -q));
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S17 encastrée-articulée"), "S17");
+        CHECK_REL(r.nodeReaction(1)[1], 5.0 * q * L / 8.0, kExact, "S17: 5qL/8");
+        CHECK_REL(r.nodeReaction(2)[1], 3.0 * q * L / 8.0, kExact, "S17: 3qL/8");
+        CHECK_REL(at(r.elements[0].diagram, 0.0)->M, -q * L * L / 8.0, kExact, "S17: M(0) = −qL²/8");
+        CHECK_ABS(at(r.elements[0].diagram, L)->M, 0.0, 1e-9 * q * L * L, "S17: M(L) = 0 à la rotule");
+    }
+    Builder gerber;
+    {   // poutre Gerber : console de 4 m + travée suspendue de 6 m (rotule au nœud 2)
+        Builder& b = gerber;
+        b.node(0, 0), b.node(4, 0), b.node(10, 0);
+        b.element(1, 2), b.element(2, 3);
+        b.m.elements[0].releaseJ = true;
+        b.support(1, true, true, true), b.support(3, false, true, false);
+        b.lc().elementLoads.push_back(uniformLoad(1, -q));
+        b.lc().elementLoads.push_back(uniformLoad(2, -q));
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S17 Gerber"), "S17");
+        CHECK_REL(r.nodeReaction(3)[1], 3.0 * q, kExact, "S17: Gerber — appui de la travée suspendue qL/2 = 3q");
+        CHECK_REL(r.nodeReaction(1)[1], 7.0 * q, kExact, "S17: Gerber — encastrement 4q + 3q");
+        CHECK_REL(at(r.elements[0].diagram, 0.0)->M, -20.0 * q, kExact, "S17: Gerber — M encastrement −(3q·4 + q·4²/2)");
+        CHECK_ABS(at(r.elements[0].diagram, 4.0)->M, 0.0, 1e-9 * q, "S17: Gerber — M nul à la rotule");
+        CHECK_REL(at(r.elements[1].diagram, 3.0)->M, 4.5 * q, kExact, "S17: Gerber — travée suspendue qL²/8");
+        TEST_CHECK(r.bc.eliminatedDofs.empty(), "S17: Gerber — aucune rotation éliminée (l'élément 2 tient le nœud 2)");
+        TEST_CHECK(compareWithMdd(b.m, 1, "S17 Gerber"), "S17");
+    }
+    {   // même rotule décrite des deux côtés : nœud sans rigidité de rotation, rotation éliminée, résultats identiques
+        Builder b = gerber;
+        b.m.elements[1].releaseI = true;
+        const auto r = run(b.m), ref = run(gerber.m);
+        TEST_CHECK(commonChecks(r, "S17 rotule des deux côtés"), "S17");
+        TEST_CHECK(r.bc.eliminatedDofs.size() == 1 && r.bc.eliminatedDofs[0] == 5, "S17: rotation du nœud 2 éliminée");
+        for (int n = 1; n <= 3; ++n)
+            for (int c = 0; c < 2; ++c)
+                CHECK_ABS(r.nodeDisplacement(n)[static_cast<std::size_t>(c)], ref.nodeDisplacement(n)[static_cast<std::size_t>(c)], 1e-12,
+                          "S17: translations identiques");
+        CHECK_REL(r.nodeReaction(1)[2], ref.nodeReaction(1)[2], kExact, "S17: moment d'encastrement identique");
+        CHECK_ABS(r.nodeReaction(2)[2], 0.0, 0.0, "S17: aucune réaction sur une rotation éliminée");
+        TEST_CHECK(compareWithMdd(b.m, 1, "S17 rotule des deux côtés"), "S17");
+    }
+    {   // treillis triangulaire articulé : N = P/2 (membrure), −P/√2 (diagonales), M = 0, flèche P(1 + 2√2)/EA
+        const double P = 50.0;
+        Builder b;
+        b.node(0, 0), b.node(4, 0), b.node(2, 2);
+        b.element(1, 2), b.element(1, 3), b.element(3, 2);
+        for (auto& e : b.m.elements) e.releaseI = e.releaseJ = true;
+        b.support(1, true, true, false), b.support(2, false, true, false);
+        b.lc().nodalLoads.push_back({ 3, 0.0, -P, 0.0 });
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S17 treillis"), "S17");
+        TEST_CHECK(r.bc.eliminatedDofs.size() == 3, "S17: treillis — 3 rotations éliminées");
+        CHECK_REL(at(r.elements[0].diagram, 2.0)->N, P / 2.0, kExact, "S17: membrure tendue P/2");
+        CHECK_REL(at(r.elements[1].diagram, r.elements[1].diagram.length / 2.0)->N, -P / std::sqrt(2.0), kExact, "S17: diagonale comprimée −P/√2");
+        for (const auto& e : r.elements) TEST_CHECK(std::abs(e.diagram.Mmax) + std::abs(e.diagram.Mmin) <= 1e-9 * P, "S17: moments nuls dans le treillis");
+        CHECK_REL(r.nodeDisplacement(3)[1], -P * (1.0 + 2.0 * std::sqrt(2.0)) / EA, kExact, "S17: flèche du nœud 3 (travaux virtuels)");
+        TEST_CHECK(compareWithMdd(b.m, 1, "S17 treillis"), "S17");
+        b.lc().imposedDisplacements.push_back({ 1, 2, 0.01 });
+        TEST_CHECK(!run(b.m).success, "S17: rotation imposée sur un nœud articulé refusée");
+    }
+    std::cout << "[PASS] S17: rotules — bi-articulée qL²/8, encastrée-articulée, Gerber, rotation éliminée, treillis (MetDeDeplacement 1e-9)" << std::endl;
+    ++passed;
+    return true;
+}
+
+// =================================================================================================
+// S18 — appuis élastiques (ressorts) : solutions analytiques, limites, équilibre, MetDeDeplacement
+// =================================================================================================
+bool testSprings(int& passed)
+{
+    const double L = 5.0, P = 40.0;
+    {   // poutre isostatique sur un appui élastique : réaction P/2 quelle que soit k, flèche P/(2k)
+        const double k = 2.0e3;
+        Builder b;
+        b.node(0, 0), b.node(L, 0);
+        b.element(1, 2);
+        b.support(1, true, true, false);
+        b.m.supports.push_back({ 2, false, false, false, 0.0, k, 0.0 });
+        b.lc().elementLoads.push_back(pointForce(1, -P, L / 2.0, LoadDirection::LocalY));
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S18 appui élastique"), "S18");
+        CHECK_REL(r.nodeDisplacement(2)[1], -P / (2.0 * k), kExact, "S18: flèche de l'appui élastique P/(2k)");
+        CHECK_REL(r.nodeSpringForce(2)[1], P / 2.0, kExact, "S18: force du ressort P/2");
+        CHECK_REL(r.nodeReaction(1)[1], P / 2.0, kExact, "S18: réaction de l'appui fixe P/2");
+        CHECK_ABS(r.nodeReaction(2)[1], 0.0, 0.0, "S18: pas de réaction d'appui rigide au nœud élastique");
+    }
+    auto tipSpring = [&](double k) {
+        Builder b;
+        b.node(0, 0), b.node(L, 0);
+        b.element(1, 2);
+        b.support(1, true, true, true);
+        if (k > 0.0) b.m.supports.push_back({ 2, false, false, false, 0.0, k, 0.0 });
+        b.lc().nodalLoads.push_back({ 2, 0.0, -P, 0.0 });
+        return b;
+    };
+    const double kc = 3.0 * EI / (L * L * L);
+    for (double k : { 0.0, 0.5 * kc, 1e4 * kc })
+    {   // console sur ressort en bout : δ = P/(3EI/L³ + k), limites k → 0 (console) et k → ∞ (appui simple)
+        const auto b = tipSpring(k);
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S18 console sur ressort"), "S18");
+        const double delta = P / (kc + k);
+        CHECK_REL(r.nodeDisplacement(2)[1], -delta, kExact, "S18: flèche P/(3EI/L³ + k), k = " << k);
+        CHECK_REL(at(r.elements[0].diagram, 0.0)->M, -(P - k * delta) * L, kExact, "S18: moment d'encastrement −(P − kδ)L");
+        if (k > 0.0) TEST_CHECK(compareWithMdd(b.m, 1, "S18 console sur ressort"), "S18");
+    }
+    {   // k très grand : tend vers l'appui simple (réaction 5P/16 pour P à mi-portée d'une encastrée-appuyée)
+        Builder b = tipSpring(0.0);
+        b.m.supports.push_back({ 2, false, false, false, 0.0, 1e6 * kc, 0.0 });
+        b.m.loadCases[0].nodalLoads.clear();
+        b.m.loadCases[0].elementLoads.push_back(pointForce(1, -P, L / 2.0, LoadDirection::LocalY));
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S18 limite k → ∞"), "S18");
+        CHECK_REL(r.nodeSpringForce(2)[1], 5.0 * P / 16.0, 1e-5, "S18: limite k → ∞ — force du ressort → 5P/16 (écart en kc/k ≈ 1e-6)");
+    }
+    {   // ressort de rotation k_r = 3EI/L à l'appui A (rotule) : M_A = (qL²/8)·α/(1 + α), α = k_r·L/(3EI) = 1
+        const double q = 8.0, kr = 3.0 * EI / L;
+        Builder b;
+        b.node(0, 0), b.node(L, 0);
+        b.element(1, 2);
+        b.m.supports.push_back({ 1, true, true, false, 0.0, 0.0, kr });
+        b.support(2, false, true, false);
+        b.lc().elementLoads.push_back(uniformLoad(1, -q));
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S18 ressort de rotation"), "S18");
+        const double MA = q * L * L / 16.0;
+        CHECK_REL(at(r.elements[0].diagram, 0.0)->M, -MA, kExact, "S18: moment d'encastrement partiel qL²/16");
+        CHECK_REL(r.nodeSpringForce(1)[2], MA, kExact, "S18: moment du ressort de rotation");
+        CHECK_REL(r.nodeDisplacement(1)[2], -MA / kr, kExact, "S18: rotation = −M_A/k_r");
+        TEST_CHECK(compareWithMdd(b.m, 1, "S18 ressort de rotation"), "S18");
+    }
+    {   // ressort horizontal qui stabilise une poutre sur deux appuis simples verticaux
+        const double k = 1.0e4, H = 12.0;
+        Builder b;
+        b.node(0, 0), b.node(L, 0);
+        b.element(1, 2);
+        b.m.supports.push_back({ 1, false, true, false, k, 0.0, 0.0 });
+        b.support(2, false, true, false);
+        b.lc().nodalLoads.push_back({ 2, H, 0.0, 0.0 });
+        const auto r = run(b.m);
+        TEST_CHECK(commonChecks(r, "S18 ressort stabilisant"), "S18");
+        CHECK_REL(r.nodeDisplacement(1)[0], H / k, kExact, "S18: ux1 = H/k");
+        CHECK_REL(r.nodeDisplacement(2)[0], H / k + H * L / EA, kExact, "S18: ux2 = H/k + HL/EA");
+        b.m.supports[0].kUx = 0.0;
+        TEST_CHECK(!run(b.m).success, "S18: sans le ressort, mécanisme détecté");
+    }
+    {   // validation : ressort négatif refusé, ressort sur DDL bloqué signalé
+        Builder b = tipSpring(0.0);
+        b.m.supports.push_back({ 2, false, false, false, 0.0, -5.0, 0.0 });
+        TEST_CHECK(!validate(b.m).ok(), "S18: rigidité de ressort négative refusée");
+        Builder c = tipSpring(0.0);
+        c.m.supports[0].kUy = 100.0;
+        const auto rep = validate(c.m);
+        TEST_CHECK(rep.ok() && !rep.warnings.empty(), "S18: ressort sur un DDL bloqué signalé (sans effet)");
+    }
+    std::cout << "[PASS] S18: ressorts — appui élastique P/(2k), console sur ressort (k → 0, k → ∞), ressort de rotation, stabilisation, MetDeDeplacement"
+              << std::endl;
+    ++passed;
+    return true;
+}
+
 } // namespace
 
 /// Point d'entrée des tests de la programmation structurelle (appelé par ScienceTests.cpp).
-int structuralTestCount() { return 10; }
+int structuralTestCount() { return 12; }
 
 bool testStructural(int& passed)
 {
     return testElement(passed) && testAxialBar(passed) && testPointLoadBeam(passed) && testDistributedLoads(passed) && testPortal(passed)
            && testInclined(passed) && testImposedDisplacements(passed) && testMechanisms(passed) && testSharedNode(passed)
-           && testCombinationsAndCrossCheck(passed);
+           && testCombinationsAndCrossCheck(passed) && testReleases(passed) && testSprings(passed);
 }

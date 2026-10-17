@@ -7,7 +7,8 @@
 // exposent un par un. Les calculs de production restent ceux de MetDeDeplacement et d'OpenSees (tsalab::planar),
 // qui servent ici d'implémentations indépendantes de comparaison.
 //
-// Unités : kN, m, kN/m² (kPa) pour E, m², m⁴, °C, rad.
+// Unités : kN, m, kN/m² (kPa) pour E, m², m⁴, °C, rad ; masses en tonnes (t = kN·s²/m), masses volumiques en t/m³,
+// temps en s (kN = t·m/s² : unités cohérentes pour la dynamique).
 // Repère global (X, Y) du plan ; rotations et moments positifs dans le sens trigonométrique (autour de +Z).
 // Repère local d'un élément : x' du nœud i vers le nœud j, y' = x' tourné de +90°.
 // DDL d'un nœud : ux, uy, θz ; DDL d'un élément : [ux_i, uy_i, θz_i, ux_j, uy_j, θz_j].
@@ -34,6 +35,7 @@ struct Material
     double E = 0.0;            ///< module d'Young, kN/m²
     double alpha = 0.0;        ///< coefficient de dilatation thermique, 1/°C (actions thermiques)
     double unitWeight = 0.0;   ///< poids volumique γ, kN/m³ (poids propre)
+    double density = 0.0;      ///< masse volumique ρ, t/m³ (dynamique : masse linéique ρ·A en t/m)
 
     bool operator==(const Material&) const = default;
 };
@@ -48,17 +50,24 @@ struct Section2D
     bool operator==(const Section2D&) const = default;
 };
 
-/// Appui d'un nœud : DDL bloqués, repère global. Un déplacement imposé non nul est une ACTION du chargement
-/// (ImposedDisplacement), appliquée à un DDL bloqué ici.
+/// Appui d'un nœud, repère global : DDL bloqués et appuis élastiques (ressorts). Un DDL bloqué a un déplacement nul,
+/// ou imposé par le chargement (ImposedDisplacement : action d'un cas). Un ressort agit sur un DDL libre : sa rigidité
+/// s'ajoute à K, il exerce sur la structure la force −k·u (réaction de l'appui élastique). Un ressort sur un DDL bloqué
+/// est sans effet (signalé à la validation).
 struct SupportCondition
 {
     int node = 0;
     bool fixUx = false, fixUy = false, fixRz = false;
+    double kUx = 0.0, kUy = 0.0;   ///< ressorts de translation, kN/m (0 : aucun)
+    double kRz = 0.0;              ///< ressort de rotation, kN·m/rad (0 : aucun)
 
+    bool hasSpring() const { return kUx > 0.0 || kUy > 0.0 || kRz > 0.0; }
     bool operator==(const SupportCondition&) const = default;
 };
 
 /// Élément filaire du modèle : extrémités désignées par identifiant de nœud, matériau et section portés par l'élément.
+/// Rotule d'extrémité (releaseI, releaseJ) : moment fléchissant nul à cette extrémité ; la rotation propre de l'élément
+/// y est indépendante de celle du nœud (condensation statique, FrameElement2D).
 struct ElementDefinition
 {
     int id = 0;
@@ -66,8 +75,18 @@ struct ElementDefinition
     Material material;
     Section2D section;
     std::string name;
+    bool releaseI = false, releaseJ = false;
 
     bool operator==(const ElementDefinition&) const = default;
+};
+
+/// Masse concentrée en un nœud (dynamique) : translations mx, my (t), inertie de rotation jz (t·m²).
+struct NodalMass
+{
+    int node = 0;
+    double mx = 0.0, my = 0.0, jz = 0.0;
+
+    bool operator==(const NodalMass&) const = default;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -167,6 +186,9 @@ struct Model2D
     std::vector<SupportCondition> supports;
     std::vector<LoadCase> loadCases;
     std::vector<LoadCombination> combinations;
+    std::vector<NodalMass> nodalMasses;                           ///< dynamique
+    /// Traçabilité (clé, valeur) : fichier d'origine, empreinte, plan, date d'import… (vide pour un modèle construit).
+    std::vector<std::pair<std::string, std::string>> metadata;
 
     const Node2D* node(int id) const;
     const ElementDefinition* element(int id) const;
@@ -175,6 +197,10 @@ struct Model2D
     const LoadCombination* combination(int id) const;
     /// Éléments reliés à un nœud.
     int elementCount(int nodeId) const;
+    /// Nœud sans rigidité de rotation : relié uniquement à des éléments articulés à ce nœud (rotules), sans appui ni
+    /// ressort en rotation. Sa rotation est indéterminée et sans effet : elle est éliminée du système (signalé).
+    bool rotationFree(int nodeId) const;
+    std::string metadataValue(const std::string& key) const;
     double extent() const;   ///< plus grande dimension du modèle (m), pour les tolérances géométriques
 
     bool operator==(const Model2D&) const = default;

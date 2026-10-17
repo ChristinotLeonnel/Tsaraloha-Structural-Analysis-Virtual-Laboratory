@@ -72,6 +72,11 @@ bool BoundaryConditions::isConstrained(int dof) const
     return std::binary_search(constrainedDofs.begin(), constrainedDofs.end(), dof);
 }
 
+bool BoundaryConditions::isEliminated(int dof) const
+{
+    return std::binary_search(eliminatedDofs.begin(), eliminatedDofs.end(), dof);
+}
+
 bool boundaryConditions(const Model2D& model, const DofNumbering& dofs, const LoadCase& loads, BoundaryConditions& out, std::string* error)
 {
     out = BoundaryConditions {};
@@ -86,10 +91,20 @@ bool boundaryConditions(const Model2D& model, const DofNumbering& dofs, const Lo
         if (s.fixUy) fixed[static_cast<std::size_t>(3 * p + 1)] = 1;
         if (s.fixRz) fixed[static_cast<std::size_t>(3 * p + 2)] = 1;
     }
+    // Rotations sans rigidité (toutes les barres articulées au nœud, ni appui ni ressort en rotation) : éliminées
+    std::vector<char> eliminated(static_cast<std::size_t>(n), 0);
+    for (std::size_t k = 0; k < dofs.nodeIds.size(); ++k)
+        if (model.rotationFree(dofs.nodeIds[k]))
+        {
+            fixed[3 * k + 2] = 1;
+            eliminated[3 * k + 2] = 1;
+        }
     for (const auto& d : loads.imposedDisplacements)
     {
         const int k = dofs.dof(d.node, d.component);
         if (k < 0) return fail(error, "déplacement imposé au nœud " + std::to_string(d.node) + " absent de la numérotation");
+        if (eliminated[static_cast<std::size_t>(k)])
+            return fail(error, "rotation imposée au nœud " + std::to_string(d.node) + " : rotation éliminée (toutes les barres y sont articulées)");
         if (!fixed[static_cast<std::size_t>(k)])
             return fail(error, "déplacement imposé " + std::string(componentName(d.component)) + " au nœud " + std::to_string(d.node)
                                    + " : ce DDL est libre (un déplacement imposé s'applique à un DDL bloqué par un appui)");
@@ -101,6 +116,7 @@ bool boundaryConditions(const Model2D& model, const DofNumbering& dofs, const Lo
         {
             out.constrainedDofs.push_back(k);
             out.imposed.push_back(value[static_cast<std::size_t>(k)]);
+            if (eliminated[static_cast<std::size_t>(k)]) out.eliminatedDofs.push_back(k);
         }
         else
             out.freeDofs.push_back(k);
@@ -119,6 +135,7 @@ bool makeElement(const Model2D& model, const ElementDefinition& e, FrameElement2
     if (!ni || !nj)
         return fail(error, "élément " + std::to_string(e.id) + " : nœud " + std::to_string(!ni ? e.nodeI : e.nodeJ) + " inexistant");
     out = FrameElement2D(e.id, *ni, *nj, e.material, e.section, e.name);
+    out.setReleases(e.releaseI, e.releaseJ);
     return true;
 }
 
@@ -149,7 +166,33 @@ bool assembleStiffness(const Model2D& model, const DofNumbering& dofs, Matrix& K
             for (int b = 0; b < 6; ++b) K(d[static_cast<std::size_t>(a)], d[static_cast<std::size_t>(b)]) += ke(a, b);
         }
     }
+    const Matrix Ks = springStiffness(model, dofs);
+    for (int k = 0; k < n; ++k) K(k, k) += Ks(k, k);
     return true;
+}
+
+Matrix springStiffness(const Model2D& model, const DofNumbering& dofs)
+{
+    Matrix Ks(dofs.size(), dofs.size());
+    for (const auto& s : model.supports)
+    {
+        const int p = dofs.nodePosition(s.node);
+        if (p < 0) continue;
+        const bool fix[3] = { s.fixUx, s.fixUy, s.fixRz };
+        const double k[3] = { s.kUx, s.kUy, s.kRz };
+        for (int c = 0; c < 3; ++c)
+            if (!fix[c] && k[c] > 0.0) Ks(3 * p + c, 3 * p + c) += k[c];
+    }
+    return Ks;
+}
+
+Vector springForces(const Model2D& model, const DofNumbering& dofs, const Vector& d)
+{
+    Vector f(static_cast<std::size_t>(dofs.size()), 0.0);
+    if (static_cast<int>(d.size()) != dofs.size()) return f;
+    const Matrix Ks = springStiffness(model, dofs);
+    for (int k = 0; k < dofs.size(); ++k) f[static_cast<std::size_t>(k)] = -Ks(k, k) * d[static_cast<std::size_t>(k)];
+    return f;
 }
 
 Vector nodalLoadVector(const DofNumbering& dofs, const LoadCase& loads)
@@ -442,7 +485,7 @@ double referenceForce(const Matrix& K, const Vector& d, const Vector& F)
 }
 
 EquilibriumCheck checkEquilibrium(const Model2D& model, const DofNumbering& dofs, const BoundaryConditions& bc, const LoadCase& loads, const Vector& R,
-                                  double reference)
+                                  double reference, const Vector& d)
 {
     EquilibriumCheck q;
     double loadAbs = 0.0, reactionAbs = 0.0, momentAbs = 0.0;
@@ -464,12 +507,20 @@ EquilibriumCheck checkEquilibrium(const Model2D& model, const DofNumbering& dofs
         loadAbs += std::abs(r.fx) + std::abs(r.fy);
         momentAbs += std::abs(r.mz);
     }
+    // Réactions : appuis (DDL imposés, hors rotations éliminées) et ressorts (−k·u sur les DDL libres)
+    std::vector<std::pair<int, double>> forces;
     for (int c : bc.constrainedDofs)
+        if (c >= 0 && c < static_cast<int>(R.size()) && !bc.isEliminated(c)) forces.emplace_back(c, R[static_cast<std::size_t>(c)]);
+    if (static_cast<int>(d.size()) == dofs.size())
     {
-        if (c < 0 || c >= static_cast<int>(R.size())) continue;
+        const Vector fs = springForces(model, dofs, d);
+        for (int k = 0; k < dofs.size(); ++k)
+            if (fs[static_cast<std::size_t>(k)] != 0.0) forces.emplace_back(k, fs[static_cast<std::size_t>(k)]);
+    }
+    for (const auto& [c, r] : forces)
+    {
         const Node2D* n = model.node(dofs.nodeIds[static_cast<std::size_t>(c / 3)]);
         if (!n) continue;
-        const double r = R[static_cast<std::size_t>(c)];
         switch (c % 3)
         {
         case 0:
@@ -550,7 +601,16 @@ std::array<double, 3> AnalysisResult2D::nodeReaction(int nodeId) const
     const int p = dofs.nodePosition(nodeId);
     if (p < 0 || R.size() < static_cast<std::size_t>(3 * p + 3)) return r;
     for (int c = 0; c < 3; ++c)
-        if (bc.isConstrained(3 * p + c)) r[static_cast<std::size_t>(c)] = R[static_cast<std::size_t>(3 * p + c)];
+        if (bc.isConstrained(3 * p + c) && !bc.isEliminated(3 * p + c)) r[static_cast<std::size_t>(c)] = R[static_cast<std::size_t>(3 * p + c)];
+    return r;
+}
+
+std::array<double, 3> AnalysisResult2D::nodeSpringForce(int nodeId) const
+{
+    std::array<double, 3> r { 0.0, 0.0, 0.0 };
+    const int p = dofs.nodePosition(nodeId);
+    if (p < 0 || springs.size() < static_cast<std::size_t>(3 * p + 3)) return r;
+    for (int c = 0; c < 3; ++c) r[static_cast<std::size_t>(c)] = springs[static_cast<std::size_t>(3 * p + c)];
     return r;
 }
 
@@ -573,7 +633,8 @@ bool assembleResult(const Model2D& model, const LoadCase& loads, const DofNumber
     out.d = d;
     if (!reactions(K, d, F, out.R, error)) return false;
     if (!elementResults(model, dofs, loads, d, diagramPoints, out.elements, error)) return false;
-    out.equilibrium = checkEquilibrium(model, dofs, bc, loads, out.R, referenceForce(K, d, F));
+    out.springs = springForces(model, dofs, d);
+    out.equilibrium = checkEquilibrium(model, dofs, bc, loads, out.R, referenceForce(K, d, F), d);
     out.success = true;
     return true;
 }
@@ -610,6 +671,8 @@ AnalysisResult2D solveLinearStatic(const Model2D& model, const LoadSelection& se
     if (!reduce(r.K, r.F, r.bc, r.reduced, &error)) return stop(error);
     r.log.push_back("4. Conditions aux limites : " + std::to_string(r.bc.freeDofs.size()) + " DDL libre(s), " + std::to_string(r.bc.constrainedDofs.size())
                     + " imposé(s).");
+    for (int e : r.bc.eliminatedDofs)
+        r.log.push_back("   " + r.dofs.label(e) + " éliminé : rotation sans rigidité (toutes les barres articulées au nœud).");
     r.solve = solveDisplacements(r.reduced, r.bc, r.dofs, &model, options.method);
     r.log.push_back("5. " + r.solve.message);
     for (const auto& w : r.solve.warnings) r.log.push_back("Avertissement : " + w);
@@ -617,7 +680,8 @@ AnalysisResult2D solveLinearStatic(const Model2D& model, const LoadSelection& se
     if (!fullDisplacements(r.bc, r.solve.df, r.dofs.size(), r.d, &error)) return stop(error);
     if (!reactions(r.K, r.d, r.F, r.R, &error)) return stop(error);
     if (!elementResults(model, r.dofs, r.loads, r.d, options.diagramPoints, r.elements, &error)) return stop(error);
-    r.equilibrium = checkEquilibrium(model, r.dofs, r.bc, r.loads, r.R, referenceForce(r.K, r.d, r.F));
+    r.springs = springForces(model, r.dofs, r.d);
+    r.equilibrium = checkEquilibrium(model, r.dofs, r.bc, r.loads, r.R, referenceForce(r.K, r.d, r.F), r.d);
     r.log.push_back("6-8. Déplacements, réactions et efforts de " + std::to_string(r.elements.size()) + " élément(s) ; équilibre : écarts relatifs "
                     + num(r.equilibrium.relativeForceResidual, 3) + " (forces) et " + num(r.equilibrium.relativeMomentResidual, 3) + " (moments).");
     r.success = true;

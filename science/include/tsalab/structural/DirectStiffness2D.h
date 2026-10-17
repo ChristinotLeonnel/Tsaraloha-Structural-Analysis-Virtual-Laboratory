@@ -6,7 +6,7 @@
 // les enchaîne (« calcul direct », référence des graphes) :
 //   1. numérotation globale des DDL (3 par nœud)                                  numberDofs
 //   2. éléments : géométrie, k', T, k = Tᵀk'T, charges nodales équivalentes         FrameElement2D
-//   3. assemblage K = Σ A_eᵀ·k_e·A_e et F = charges nodales + Σ A_eᵀ·f_eq,e           assembleStiffness, assembleLoads
+//   3. assemblage K = Σ A_eᵀ·k_e·A_e + K_ressorts et F = charges nodales + Σ A_eᵀ·f_eq,e   assembleStiffness, assembleLoads
 //   4. conditions aux limites : DDL libres f, imposés c, d_c                         boundaryConditions
 //      système réduit K_ff·d_f = F_f − K_fc·d_c                                      reduce
 //   5. résolution (factorisation, jamais d'inverse explicite), diagnostic des
@@ -46,12 +46,16 @@ struct BoundaryConditions
     std::vector<int> freeDofs;          ///< croissants
     std::vector<int> constrainedDofs;   ///< croissants
     Vector imposed;                     ///< d_c, même ordre que constrainedDofs (0 pour un appui fixe)
+    /// Rotations éliminées (sous-ensemble de constrainedDofs) : nœud entouré de rotules, sans appui ni ressort en
+    /// rotation — rotation sans rigidité, indéterminée et sans effet ; ce n'est pas un appui (aucune réaction).
+    std::vector<int> eliminatedDofs;
 
     bool isConstrained(int dof) const;
+    bool isEliminated(int dof) const;
     bool operator==(const BoundaryConditions&) const = default;
 };
 
-/// Appuis du modèle et déplacements imposés du chargement (refusés sur un DDL libre).
+/// Appuis du modèle, rotations sans rigidité éliminées, déplacements imposés du chargement (refusés sur un DDL libre).
 bool boundaryConditions(const Model2D& model, const DofNumbering& dofs, const LoadCase& loads, BoundaryConditions& out,
                         std::string* error = nullptr);
 
@@ -61,8 +65,12 @@ bool makeElement(const Model2D& model, const ElementDefinition& definition, Fram
 /// Opérateur d'assemblage booléen A_e (6 × n) : d_e = A_e·d.
 Matrix assemblyOperator(const DofNumbering& dofs, int nodeI, int nodeJ);
 
-/// K (n × n) = Σ A_eᵀ·k_e·A_e, calculé par adressage direct (même résultat que la somme des produits).
+/// K (n × n) = Σ A_eᵀ·k_e·A_e + K_ressorts, calculé par adressage direct (même résultat que la somme des produits).
 bool assembleStiffness(const Model2D& model, const DofNumbering& dofs, Matrix& K, std::string* error = nullptr);
+/// Rigidité des appuis élastiques (diagonale, n × n) : k sur les DDL libres munis d'un ressort.
+Matrix springStiffness(const Model2D& model, const DofNumbering& dofs);
+/// Forces exercées par les ressorts sur la structure : −k·u (n, nulles hors ressorts).
+Vector springForces(const Model2D& model, const DofNumbering& dofs, const Vector& d);
 /// Vecteur des charges nodales seules (repère global).
 Vector nodalLoadVector(const DofNumbering& dofs, const LoadCase& loads);
 /// F = charges nodales + Σ A_eᵀ·(charges nodales équivalentes globales). Les déplacements imposés n'y figurent pas.
@@ -123,11 +131,11 @@ struct EquilibriumCheck
     bool operator==(const EquilibriumCheck&) const = default;
 };
 
-/// Bilan global : résultante des charges calculée depuis leur définition (pas depuis F) et des réactions.
-/// referenceForce : force de référence des écarts relatifs quand charges et réactions sont nulles ou presque
-/// (dilatation libre, déplacement imposé sans effort) ; referenceForce(K, d, F) la calcule.
+/// Bilan global : résultante des charges calculée depuis leur définition (pas depuis F), des réactions d'appui et des
+/// forces des ressorts (−k·u, si d est fourni). referenceForce : force de référence des écarts relatifs quand charges
+/// et réactions sont nulles ou presque (dilatation libre, déplacement imposé sans effort) ; referenceForce(K, d, F).
 EquilibriumCheck checkEquilibrium(const Model2D& model, const DofNumbering& dofs, const BoundaryConditions& bc,
-                                  const LoadCase& loads, const Vector& R, double referenceForce = 0.0);
+                                  const LoadCase& loads, const Vector& R, double referenceForce = 0.0, const Vector& d = {});
 /// max(‖K·d‖∞, ‖F‖∞) : ordre de grandeur des forces nodales élastiques du calcul.
 double referenceForce(const Matrix& K, const Vector& d, const Vector& F);
 
@@ -160,12 +168,15 @@ struct AnalysisResult2D
     ReducedSystem reduced;
     DisplacementSolve solve;
     Vector d, R;
+    Vector springs;                  ///< forces des ressorts sur la structure, −k·u (n)
     std::vector<ElementResult> elements;
     EquilibriumCheck equilibrium;
 
     std::array<double, 3> nodeDisplacement(int nodeId) const;
-    /// Réaction d'appui (composantes nulles sur les DDL libres).
+    /// Réaction d'appui (composantes nulles sur les DDL libres et les rotations éliminées).
     std::array<double, 3> nodeReaction(int nodeId) const;
+    /// Force des ressorts du nœud (Fx, Fy en kN, Mz en kN·m), nulle sans ressort.
+    std::array<double, 3> nodeSpringForce(int nodeId) const;
     const ElementResult* element(int id) const;
     bool operator==(const AnalysisResult2D&) const = default;
 };

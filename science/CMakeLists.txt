@@ -24,6 +24,8 @@ add_library(tsalab_science STATIC
     include/tsalab/structural/Frame2D.h
     include/tsalab/structural/FrameElement2D.h
     include/tsalab/structural/DirectStiffness2D.h
+    include/tsalab/structural/Dynamics2D.h
+    include/tsalab/structural/MovingLoads2D.h
     src/LinearAlgebra.cpp
     src/SolverComparison.cpp
     src/MddBridge.h
@@ -34,6 +36,8 @@ add_library(tsalab_science STATIC
     src/structural/Frame2D.cpp
     src/structural/FrameElement2D.cpp
     src/structural/DirectStiffness2D.cpp
+    src/structural/Dynamics2D.cpp
+    src/structural/MovingLoads2D.cpp
 )
 add_library(tsalab::science ALIAS tsalab_science)
 target_include_directories(tsalab_science PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -61,7 +65,7 @@ option(TSALAB_SCIENCE_TOOLS "Compiler tsalab-bench et les tests du cœur scienti
 if(TSALAB_SCIENCE_TOOLS)
     add_executable(tsalab-bench tools/tsalab_bench.cpp)
     target_link_libraries(tsalab-bench PRIVATE tsalab_science)
-    add_executable(tsalab_science_tests tests/ScienceTests.cpp tests/StructuralTests.cpp)
+    add_executable(tsalab_science_tests tests/ScienceTests.cpp tests/StructuralTests.cpp tests/DynamicsTests.cpp)
     target_link_libraries(tsalab_science_tests PRIVATE tsalab_science)
     if(MSVC)
         target_compile_options(tsalab-bench PRIVATE /W4 /permissive- /utf-8)

@@ -210,15 +210,18 @@ bool testPlanar(int& passed)
 // Programmation structurelle (StructuralTests.cpp) : FrameElement2D, charges, méthode des déplacements, mécanismes.
 bool testStructural(int& passed);
 int structuralTestCount();
+// Dynamique et charges roulantes (DynamicsTests.cpp) : masses, modes, Newmark, spectres, convois, lignes d'influence.
+bool testDynamics(int& passed);
+int dynamicsTestCount();
 
 int main()
 {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif
-    const int kExpected = 6 + structuralTestCount();
+    const int kExpected = 6 + structuralTestCount() + dynamicsTestCount();
     int passed = 0;
-    const bool ok = testSolvers(passed) && testPlanar(passed) && testStructural(passed);
+    const bool ok = testSolvers(passed) && testPlanar(passed) && testStructural(passed) && testDynamics(passed);
     std::cout << "\nRESULTS: " << passed << " / " << kExpected << " tests passed" << (ok ? " successfully!" : " (FAILURE)") << std::endl;
     return ok && passed == kExpected ? 0 : 1;
 }

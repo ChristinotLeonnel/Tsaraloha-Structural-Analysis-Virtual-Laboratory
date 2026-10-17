@@ -1,5 +1,5 @@
-// Élément de portique plan à 6 DDL : rigidités, transformation, charges, efforts, diagrammes et déformée.
-// Formulation et conventions : FrameElement2D.h.
+// Élément de portique plan à 6 DDL : rigidités, transformation, charges, efforts, diagrammes et déformée, rotules
+// d'extrémité (condensation statique), matrices de masse. Formulation et conventions : FrameElement2D.h.
 
 #include "tsalab/structural/FrameElement2D.h"
 
@@ -119,6 +119,12 @@ FrameElement2D::FrameElement2D(int id, const Node2D& nodeI, const Node2D& nodeJ,
 {
 }
 
+void FrameElement2D::setReleases(bool releaseI, bool releaseJ)
+{
+    m_releaseI = releaseI;
+    m_releaseJ = releaseJ;
+}
+
 std::vector<std::string> FrameElement2D::validate() const
 {
     std::vector<std::string> e;
@@ -156,7 +162,7 @@ double FrameElement2D::sine() const
     return L > 0.0 ? (m_j.y - m_i.y) / L : 0.0;
 }
 
-Matrix FrameElement2D::localStiffness() const
+Matrix FrameElement2D::baseLocalStiffness() const
 {
     Matrix k(6, 6);
     const double L = length();
@@ -172,6 +178,61 @@ Matrix FrameElement2D::localStiffness() const
     k(2, 4) = k(4, 2) = k(4, 5) = k(5, 4) = -6.0 * ei / L2;
     k(2, 2) = k(5, 5) = 4.0 * ei / L;
     k(2, 5) = k(5, 2) = 2.0 * ei / L;
+    return k;
+}
+
+void FrameElement2D::condensation(const Vector& f0, Matrix& C, Vector& c0) const
+{
+    // DDL locaux libérés R (rotations aux rotules) et conservés O ; θ_R = −k'_RR⁻¹·(k'_RO·d'_O + f0'_R)
+    C = numerics::LinAlg::identity(6);
+    c0.assign(6, 0.0);
+    std::vector<int> R;
+    if (m_releaseI) R.push_back(2);
+    if (m_releaseJ) R.push_back(5);
+    if (R.empty()) return;
+    const Matrix k = baseLocalStiffness();
+    double inv[2][2] = { { 0.0, 0.0 }, { 0.0, 0.0 } };
+    if (R.size() == 1)
+    {
+        const double krr = k(R[0], R[0]);
+        if (!(krr > 0.0)) return;   // élément invalide (EI nul) : signalé par validate()
+        inv[0][0] = 1.0 / krr;
+    }
+    else
+    {
+        const double a = k(2, 2), b = k(2, 5), c = k(5, 2), d = k(5, 5), det = a * d - b * c;
+        if (!(std::abs(det) > 0.0)) return;
+        inv[0][0] = d / det, inv[0][1] = -b / det, inv[1][0] = -c / det, inv[1][1] = a / det;
+    }
+    for (std::size_t r = 0; r < R.size(); ++r)
+    {
+        const int row = R[r];
+        for (int col = 0; col < 6; ++col)
+        {
+            C(row, col) = 0.0;
+            if (col == 2 && m_releaseI) continue;
+            if (col == 5 && m_releaseJ) continue;
+            double v = 0.0;
+            for (std::size_t q = 0; q < R.size(); ++q) v -= inv[r][q] * k(R[q], col);
+            C(row, col) = v;
+        }
+        double v0 = 0.0;
+        for (std::size_t q = 0; q < R.size(); ++q) v0 -= inv[r][q] * f0[static_cast<std::size_t>(R[q])];
+        c0[static_cast<std::size_t>(row)] = v0;
+    }
+}
+
+Matrix FrameElement2D::localStiffness() const
+{
+    if (!hasRelease()) return baseLocalStiffness();
+    Matrix C;
+    Vector c0;
+    condensation(Vector(6, 0.0), C, c0);
+    Matrix k = numerics::LinAlg::congruence(C, baseLocalStiffness());
+    // Lignes et colonnes des rotations libérées : nulles par construction (arrondis effacés)
+    for (int r : { 2, 5 })
+        if ((r == 2 && m_releaseI) || (r == 5 && m_releaseJ))
+            for (int k2 = 0; k2 < 6; ++k2) k(r, k2) = k(k2, r) = 0.0;
     return k;
 }
 
@@ -356,6 +417,22 @@ std::vector<LocalLoad> FrameElement2D::localLoads(const std::vector<ElementLoad>
 
 Vector FrameElement2D::fixedEndForces(const std::vector<LocalLoad>& loads) const
 {
+    const Vector f0 = baseFixedEndForces(loads);
+    if (!hasRelease()) return f0;
+    // Cᵀ·(k'·c0 + f0') : efforts d'encastrement de la barre articulée (moment nul à la rotule)
+    Matrix C;
+    Vector c0;
+    condensation(f0, C, c0);
+    Vector g = numerics::LinAlg::multiply(baseLocalStiffness(), c0);
+    for (std::size_t k = 0; k < 6; ++k) g[k] += f0[k];
+    Vector f = numerics::LinAlg::multiply(numerics::LinAlg::transpose(C), g);
+    if (m_releaseI) f[2] = 0.0;
+    if (m_releaseJ) f[5] = 0.0;
+    return f;
+}
+
+Vector FrameElement2D::baseFixedEndForces(const std::vector<LocalLoad>& loads) const
+{
     Vector f(6, 0.0);
     const double L = length();
     if (!(L > 0.0)) return f;
@@ -419,13 +496,84 @@ Vector FrameElement2D::equivalentNodalLoadsGlobal(const std::vector<LocalLoad>& 
     return toGlobal(equivalentNodalLoadsLocal(loads));
 }
 
+Vector FrameElement2D::elementLocalDisplacements(const Vector& d, const std::vector<LocalLoad>& loads) const
+{
+    if (d.size() != 6) return {};
+    Vector dl = toLocal(d);
+    if (!hasRelease()) return dl;
+    Matrix C;
+    Vector c0;
+    condensation(baseFixedEndForces(loads), C, c0);
+    Vector de = numerics::LinAlg::multiply(C, dl);
+    for (std::size_t k = 0; k < 6; ++k) de[k] += c0[k];
+    return de;
+}
+
 Vector FrameElement2D::endForces(const Vector& d, const std::vector<LocalLoad>& loads) const
 {
     if (d.size() != 6) return {};
-    Vector f = numerics::LinAlg::multiply(localStiffness(), toLocal(d));
-    const Vector f0 = fixedEndForces(loads);
+    // f' = k'·d'_élément + f0' (barre bi-encastrée, déplacements propres) ; nul aux rotules par construction
+    Vector f = numerics::LinAlg::multiply(baseLocalStiffness(), elementLocalDisplacements(d, loads));
+    const Vector f0 = baseFixedEndForces(loads);
     for (std::size_t k = 0; k < 6; ++k) f[k] += f0[k];
+    if (m_releaseI) f[2] = 0.0;
+    if (m_releaseJ) f[5] = 0.0;
     return f;
+}
+
+FrameElement2D::SectionForces FrameElement2D::internalForcesAt(const Vector& d, const std::vector<LocalLoad>& loads, double x, bool includeAt) const
+{
+    SectionForces s;
+    const Vector f = endForces(d, loads);
+    if (f.size() != 6) return s;
+    const LoadSums q = loadSums(loads, x, includeAt);
+    s.N = -f[0] - q.Px;
+    s.V = f[1] + q.Py;
+    s.M = -f[2] + x * f[1] + q.MPy - q.Mc;
+    return s;
+}
+
+double FrameElement2D::massPerLength() const
+{
+    return m_material.density * m_section.A;
+}
+
+Matrix FrameElement2D::localMass(MassModel model) const
+{
+    Matrix m(6, 6);
+    const double L = length(), mb = massPerLength();
+    if (!(L > 0.0) || !(mb > 0.0)) return m;
+    if (model == MassModel::Lumped)
+    {
+        // Masse concentrée : m̄L/2 sur les translations de chaque nœud, pas d'inertie de rotation
+        for (int k : { 0, 1, 3, 4 }) m(k, k) = mb * L / 2.0;
+        return m;
+    }
+    const double a = mb * L / 6.0, b = mb * L / 420.0, L2 = L * L;
+    m(0, 0) = m(3, 3) = 2.0 * a;
+    m(0, 3) = m(3, 0) = a;
+    const int idx[4] = { 1, 2, 4, 5 };
+    const double bend[4][4] = { { 156.0, 22.0 * L, 54.0, -13.0 * L },
+                                { 22.0 * L, 4.0 * L2, 13.0 * L, -3.0 * L2 },
+                                { 54.0, 13.0 * L, 156.0, -22.0 * L },
+                                { -13.0 * L, -3.0 * L2, -22.0 * L, 4.0 * L2 } };
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c) m(idx[r], idx[c]) = b * bend[r][c];
+    if (!hasRelease()) return m;
+    // Rotules : masse cohérente réduite par la même transformation que la rigidité (Cᵀ·m'·C)
+    Matrix C;
+    Vector c0;
+    condensation(Vector(6, 0.0), C, c0);
+    Matrix mc = numerics::LinAlg::congruence(C, m);
+    for (int r : { 2, 5 })
+        if ((r == 2 && m_releaseI) || (r == 5 && m_releaseJ))
+            for (int k = 0; k < 6; ++k) mc(r, k) = mc(k, r) = 0.0;
+    return mc;
+}
+
+Matrix FrameElement2D::globalMass(MassModel model) const
+{
+    return numerics::LinAlg::congruence(transformation(), localMass(model));
 }
 
 InternalForceDiagram FrameElement2D::diagram(const Vector& d, const std::vector<LocalLoad>& loads, int points) const
@@ -436,7 +584,7 @@ InternalForceDiagram FrameElement2D::diagram(const Vector& d, const std::vector<
     D.length = L;
     if (!(L > 0.0) || d.size() != 6) return D;
     points = std::max(points, 2);
-    const Vector dl = toLocal(d);
+    const Vector dl = elementLocalDisplacements(d, loads);   // rotations propres de l'élément aux rotules
     const Vector f = endForces(d, loads);
     const double Fxi = f[0], Fyi = f[1], Mzi = f[2];
     const double EA = m_material.E * m_section.A, EI = m_material.E * m_section.Iz;
