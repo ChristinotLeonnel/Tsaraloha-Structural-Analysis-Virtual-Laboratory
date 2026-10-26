@@ -129,7 +129,7 @@ add_executable(TSALab
 )
 tsa_apply_common_settings(TSALab ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab REUSE_FROM TSALab_Model)
-target_link_libraries(TSALab PRIVATE TSALab_Model TSALab_Graphics TSALab_Widgets TSALab_Research Qt6::Svg)
+target_link_libraries(TSALab PRIVATE TSALab_Model TSALab_Graphics TSALab_Widgets TSALab_Research Qt6::Widgets Qt6::Svg)
 tsaraloha_configure_application(TSALab)
 
 # Extension Explorateur : miniatures des fichiers .tsalab (CLSID propre, product/ProductShellIds.h)
@@ -170,7 +170,8 @@ if(TSA_BUILD_TESTS)
     add_executable(TSALab_Tests ${LAB_DIR}/Tests/LabTests.cpp ${LAB_DIR}/Tests/StructuralLabTests.cpp)
     tsa_apply_common_settings(TSALab_Tests ${LAB_PRODUCT_DIR} ${LAB_DIR})
     target_precompile_headers(TSALab_Tests REUSE_FROM TSALab_Model)
-    target_link_libraries(TSALab_Tests PRIVATE TSALab_Model TSALab_Research)
+    # QApplication (LabTests.cpp) : QtWidgets déclaré ici, il ne doit pas venir du modèle
+    target_link_libraries(TSALab_Tests PRIVATE TSALab_Model TSALab_Research Qt6::Widgets)
     set_target_properties(TSALab_Tests PROPERTIES OUTPUT_NAME "TSALab_TestSuite")
     add_dependencies(TSALab_Tests tsalab_sample_plugin)
     target_compile_definitions(TSALab_Tests PRIVATE TSALAB_SAMPLE_PLUGIN="$<TARGET_FILE:tsalab_sample_plugin>")
