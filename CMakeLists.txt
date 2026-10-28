@@ -35,9 +35,11 @@ if(NOT EXISTS "${TSA_ROOT_DIR}/cmake/TSAProduct.cmake")
 endif()
 message(STATUS "Base commune TSA : ${TSA_ROOT_DIR}")
 
-# Qt 6, OpenCASCADE (SDK partagés avec TSA : téléchargés une seule fois dans le dépôt TSA)
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Svg Network)
+# Qt 6, OpenCASCADE (SDK partagés avec TSA : téléchargés une seule fois dans le dépôt TSA). Versions et détection
+# communes (TSA/docs/DEPENDENCIES.md) : sans Qt6_DIR valide, la Qt compatible la plus récente installée est retenue.
 include("${TSA_ROOT_DIR}/cmake/SetupDependencies.cmake")
+tsa_find_qt()
+find_package(Qt6 ${TSA_QT_MIN_VERSION} REQUIRED COMPONENTS Core Gui Widgets Svg Network)
 setup_external_dependencies()
 find_package(OpenCASCADE REQUIRED)
 message(STATUS "OpenCASCADE Version: ${OpenCASCADE_VERSION}")
@@ -129,7 +131,7 @@ add_executable(TSALab
 )
 tsa_apply_common_settings(TSALab ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab REUSE_FROM TSALab_Model)
-target_link_libraries(TSALab PRIVATE TSALab_Model TSALab_Graphics TSALab_Widgets TSALab_Research Qt6::Svg)
+target_link_libraries(TSALab PRIVATE TSALab_Model TSALab_Graphics TSALab_Widgets TSALab_Research Qt6::Widgets Qt6::Svg)
 tsaraloha_configure_application(TSALab)
 
 # Extension Explorateur : miniatures des fichiers .tsalab (CLSID propre, product/ProductShellIds.h)
@@ -170,7 +172,8 @@ if(TSA_BUILD_TESTS)
     add_executable(TSALab_Tests ${LAB_DIR}/Tests/LabTests.cpp ${LAB_DIR}/Tests/StructuralLabTests.cpp)
     tsa_apply_common_settings(TSALab_Tests ${LAB_PRODUCT_DIR} ${LAB_DIR})
     target_precompile_headers(TSALab_Tests REUSE_FROM TSALab_Model)
-    target_link_libraries(TSALab_Tests PRIVATE TSALab_Model TSALab_Research)
+    # QApplication (LabTests.cpp) : QtWidgets déclaré ici, il ne doit pas venir du modèle
+    target_link_libraries(TSALab_Tests PRIVATE TSALab_Model TSALab_Research Qt6::Widgets)
     set_target_properties(TSALab_Tests PROPERTIES OUTPUT_NAME "TSALab_TestSuite")
     add_dependencies(TSALab_Tests tsalab_sample_plugin)
     target_compile_definitions(TSALab_Tests PRIVATE TSALAB_SAMPLE_PLUGIN="$<TARGET_FILE:tsalab_sample_plugin>")

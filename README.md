@@ -94,7 +94,7 @@ TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D int
 * **Compilateur :** MSVC (Visual Studio 2022 ou 2026 x64) avec support complet C++20 *(recommandé)* ou MinGW-w64 (GCC 13+)
 * **CMake :** Version 3.20+
 * **Ninja :** Intégré à Visual Studio (composant *Outils CMake pour Windows*) ou via `winget install Ninja-build.Ninja`
-* **Qt 6 :** Version 6.2+ (`Core`, `Gui`, `Widgets`, `Svg`, `Network`) — ex. `C:\Qt\6.11.2\msvc2022_64`
+* **Qt 6 :** Version 6.2+ (`Core`, `Gui`, `Widgets`, `Svg`, `Network`), kit MSVC x64 — détectée automatiquement (ex. `C:\Qt\6.12.0\msvc2022_64`), voir `TSA/docs/DEPENDENCIES.md`
 * **OpenCASCADE 8.0.1 & Dépendances 3rdparty :** Téléchargées et extraites automatiquement par CMake si absentes de la machine.
 
 ---
