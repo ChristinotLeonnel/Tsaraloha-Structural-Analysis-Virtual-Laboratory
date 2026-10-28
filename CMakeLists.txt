@@ -35,9 +35,11 @@ if(NOT EXISTS "${TSA_ROOT_DIR}/cmake/TSAProduct.cmake")
 endif()
 message(STATUS "Base commune TSA : ${TSA_ROOT_DIR}")
 
-# Qt 6, OpenCASCADE (SDK partagés avec TSA : téléchargés une seule fois dans le dépôt TSA)
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Svg Network)
+# Qt 6, OpenCASCADE (SDK partagés avec TSA : téléchargés une seule fois dans le dépôt TSA). Versions et détection
+# communes (TSA/docs/DEPENDENCIES.md) : sans Qt6_DIR valide, la Qt compatible la plus récente installée est retenue.
 include("${TSA_ROOT_DIR}/cmake/SetupDependencies.cmake")
+tsa_find_qt()
+find_package(Qt6 ${TSA_QT_MIN_VERSION} REQUIRED COMPONENTS Core Gui Widgets Svg Network)
 setup_external_dependencies()
 find_package(OpenCASCADE REQUIRED)
 message(STATUS "OpenCASCADE Version: ${OpenCASCADE_VERSION}")
