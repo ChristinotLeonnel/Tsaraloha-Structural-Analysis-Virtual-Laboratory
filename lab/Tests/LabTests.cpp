@@ -6,6 +6,7 @@
 #include "Analysis/ResultsModel.h"
 #include "App/ProductInfo.h"
 #include "Automation/CommandRegistry.h"
+#include "Core/Utf8Path.h"
 #include "IO/TSAFile.h"
 #include "IO/TSAFileFormat.h"
 #include "Model/Model.h"
@@ -117,7 +118,7 @@ bool runSuite_Lab(int& passed)
         const QString tsaPath = dir.filePath("modele_tsa.tsa");
         TEST_CHECK(TSA::IO::TSAProjectIO::saveProject(tsaPath, model), "Test L5: écriture");
         auto patchMagic = [](const QString& path, uint32_t magic) {
-            std::fstream f(path.toStdString(), std::ios::in | std::ios::out | std::ios::binary);
+            std::fstream f(TSA::Core::utf8Path(path.toStdString()), std::ios::in | std::ios::out | std::ios::binary);
             f.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
             return bool(f);
         };
