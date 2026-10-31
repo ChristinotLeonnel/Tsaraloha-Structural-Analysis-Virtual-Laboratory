@@ -288,8 +288,8 @@ bool runSuite_Lab(int& passed)
         const auto cases = loadCases(dir);
         int valid = 0;
         for (const auto& c : cases) valid += c.valid();
-        // 36 cas depuis le 2026-10-31 : RDM-11a/b (non linéaires) retirés, rotules et portiques aléatoires ajoutés (TSA, ADR-025)
-        TEST_CHECK(QDir(dir).exists() && cases.size() == 36 && valid == 36, "Test L9: 36 cas du banc partagé chargés et valides (" << cases.size() << ", " << valid << ")");
+        // 39 cas depuis le 2026-10-31 : RDM-11a/b (non linéaires) retirés (TSA, ADR-025), rotules et portiques aléatoires ajoutés (BUG-148)
+        TEST_CHECK(QDir(dir).exists() && cases.size() == 39 && valid == 39, "Test L9: 39 cas du banc partagé chargés et valides (" << cases.size() << ", " << valid << ")");
 
         // Cas invalide : erreurs listées, pas d'exécution ni de plantage
         QTemporaryDir tmp;
