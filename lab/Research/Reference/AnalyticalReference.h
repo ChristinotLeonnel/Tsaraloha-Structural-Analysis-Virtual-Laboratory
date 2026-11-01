@@ -74,7 +74,7 @@ ReferenceComparison simplySupportedCentralLoad(const TSA::Model::Model& model, c
 ///   Σ R_z = q·a².
 /// Hypothèses vérifiées : une seule dalle (formulation coque, sans ouverture), carrée, horizontale, alignée sur les axes ;
 /// aucune barre ni voile ; appuis de bord durs sur les quatre côtés, sans raideur ; une seule pression uniforme
-/// (gravité) ; poids propre exclu ; maillage transmis au calcul. La flèche est jugée avec une tolérance de 1 % (erreur
+/// (suivant Z global, q = −valeur) ; poids propre exclu ; maillage transmis au calcul. La flèche est jugée avec une tolérance de 1 % (erreur
 /// de discrétisation, voir l'étude de convergence de FEA-07).
 ReferenceComparison squarePlateHardSupport(const TSA::Model::Model& model, const TSA::Analysis::AnalysisContext& context,
                                            const TSA::Analysis::ResultsModel* results);

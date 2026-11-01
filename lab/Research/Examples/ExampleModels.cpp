@@ -44,7 +44,7 @@ void buildSimplySupported(Model& model)
     model.getNode(b)->setSupport(SupportDefinition::roller());
     const int bm = model.addBar(a, b, Section::ipe(300), Material::steelS235(), BarRole::Beam, 0.0, "Poutre");
     const int lc = addCase(model, "q uniforme");
-    model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, 10.0));
+    model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, -10.0, LoadDirection::GlobalZ));
 }
 
 // Poutre bi-appuyée IPE 300 de 6 m, force ponctuelle centrale P = 50 kN au nœud de mi-portée (cas RDM-04 du banc
@@ -100,7 +100,7 @@ void buildSquarePlate(Model& model)
     model.getSlab(sl)->setEdgeSupports(sups);
     const int lc = addCase(model, "q uniforme");
     SurfaceLoad q;
-    q.surfaceId = sl, q.loadCaseId = lc, q.value = 10.0, q.name = "q = 10 kN/m²";
+    q.surfaceId = sl, q.loadCaseId = lc, q.value = -10.0, q.name = "q = 10 kN/m²";   // Z global (direction par défaut), vers le bas
     model.loadManager().addSurfaceLoad(q);
 
     auto mp = TSA::Mesh::MeshProject::load(model);
@@ -127,7 +127,7 @@ void buildFixedFixed(Model& model)
     model.getNode(b)->setSupport(SupportDefinition::fixed());
     const int bm = model.addBar(a, b, Section::ipe(300), Material::steelS235(), BarRole::Beam, 0.0, "Poutre");
     const int lc = addCase(model, "q uniforme");
-    model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, 10.0));
+    model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, -10.0, LoadDirection::GlobalZ));
 }
 
 // Portique plan (plan XZ) : poteaux HEB 200 de 3 m encastrés, traverse IPE 300 de 6 m.
@@ -141,7 +141,7 @@ void buildPortal(Model& model)
     model.addColumn(d, c, Section::heb(200), Material::steelS235(), 0.0, "Poteau droit");
     const int lc = addCase(model, "Vent + exploitation");
     model.loadManager().addNodalLoad(NodalLoad(0, b, lc, 15.0, 0.0, 0.0));
-    model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, 12.0));
+    model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, -12.0, LoadDirection::GlobalZ));
 }
 
 // Treillis de Warren (plan XZ) : 6 panneaux de 2 m, hauteur 1,5 m, barres articulées Ø 80 mm.
@@ -187,7 +187,7 @@ void buildFrame3D(Model& model)
         for (int i = 0; i < 2; ++i)
         {
             const int bm = model.addBar(head[i][j], head[i + 1][j], Section::ipe(300), Material::steelS235(), BarRole::Beam);
-            model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, 8.0));
+            model.loadManager().addMemberLoad(MemberLoad::uniform(bm, lc, -8.0, LoadDirection::GlobalZ));
         }
     for (int i = 0; i < 3; ++i) model.addBar(head[i][0], head[i][1], Section::ipe(300), Material::steelS235(), BarRole::Beam);
     model.loadManager().addNodalLoad(NodalLoad(0, head[0][0], lc, 10.0, 5.0, 0.0));
