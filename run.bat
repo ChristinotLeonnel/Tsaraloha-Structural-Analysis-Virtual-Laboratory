@@ -9,7 +9,9 @@ setlocal
 set "TSA_DIR=%~dp0"
 :: SDK partages (OCCT, 3rdparty) : ceux de la base commune TSA (depot voisin), voir CMakeLists.txt
 if not defined TSA_ROOT_DIR set "TSA_ROOT_DIR=%~dp0..\TSA"
+if not exist "%TSA_ROOT_DIR%\cmake\TSAProduct.cmake" if exist "%~dp0..\Tsaraloha-Structural-Analysis\cmake\TSAProduct.cmake" set "TSA_ROOT_DIR=%~dp0..\Tsaraloha-Structural-Analysis"
 set "QT_DIR=C:\Qt\6.11.2\msvc2022_64"
+if not exist "%QT_DIR%" if exist "C:\Qt\6.12.0\msvc2022_64" set "QT_DIR=C:\Qt\6.12.0\msvc2022_64"
 set "OCCT_DIR=%TSA_ROOT_DIR%\thirdparty\opencascade-8.0.1-vc14-64"
 set "TP_DIR=%TSA_ROOT_DIR%\thirdparty\3rdparty-vc14-64"
 :: Ancien emplacement (racine de TSA) tant que le dossier n'a pas ete deplace dans thirdparty\

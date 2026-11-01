@@ -48,7 +48,7 @@
 TSALab permet de modéliser, vérifier, charger, analyser et inspecter en 3D interactive des bâtiments à étages, des halles industrielles, des fermes et treillis spatiaux, des structures haubanées et des systèmes de fondations selon les normes européennes (**Eurocodes**).
 
 > **Base technique commune avec TSA.** TSALab ne contient pas de copie du code de TSA : il compile directement les
-> sources du dépôt [TSA](https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis) (cloné à côté, `../TSA`).
+> sources du dépôt [TSA](https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis) (cloné à côté : `../TSA` ou `../Tsaraloha-Structural-Analysis`).
 > Un bug corrigé dans TSA l'est donc aussi dans TSALab. Ce dépôt ne contient que ce qui est propre au laboratoire :
 > son identité (`product/`, format `.tsalab`), ses modules de recherche et ses espaces (`lab/`), ses icônes.
 
@@ -109,8 +109,9 @@ git clone https://github.com/ChristinotLeonnel/Tsaraloha-Structural-Analysis-Vir
 cd TSALab
 ```
 
-Un autre emplacement de TSA s'indique à CMake : `-DTSA_ROOT_DIR=<chemin>`. OpenCASCADE et les dépendances
-3rdparty sont celles du dépôt TSA (téléchargées une seule fois, dans `../TSA`).
+Le dossier de TSA peut aussi garder le nom de son dépôt GitHub (`../Tsaraloha-Structural-Analysis`) ; un autre
+emplacement s'indique à CMake : `-DTSA_ROOT_DIR=<chemin>`. Toutes les dépendances (OpenCASCADE, 3rdparty, Qt,
+OpenSees…) sont celles du dépôt TSA : depuis TSA, `py -3 install_dependencies.py` les installe dans son `thirdparty/`.
 
 ---
 

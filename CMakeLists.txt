@@ -25,13 +25,27 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # =============================================================================
-# Base commune : dépôt TSA (par défaut le dossier voisin ../TSA)
+# Base commune : dépôt TSA, dossier voisin ../TSA ou ../Tsaraloha-Structural-Analysis (nom du dépôt GitHub).
+# Une valeur en cache qui ne désigne plus un dépôt TSA (dossier renommé, cache d'un autre poste) est remplacée.
 # =============================================================================
-set(TSA_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TSA" CACHE PATH "Racine du dépôt TSA (bibliothèques partagées)")
+if(NOT (DEFINED TSA_ROOT_DIR AND EXISTS "${TSA_ROOT_DIR}/cmake/TSAProduct.cmake"))
+    set(_tsa_found "")
+    foreach(_d TSA Tsaraloha-Structural-Analysis)
+        if(NOT _tsa_found AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../${_d}/cmake/TSAProduct.cmake")
+            set(_tsa_found "${CMAKE_CURRENT_SOURCE_DIR}/../${_d}")
+        endif()
+    endforeach()
+    if(_tsa_found)
+        set(TSA_ROOT_DIR "${_tsa_found}" CACHE PATH "Racine du dépôt TSA (bibliothèques partagées)" FORCE)
+    elseif(NOT DEFINED TSA_ROOT_DIR)
+        set(TSA_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TSA" CACHE PATH "Racine du dépôt TSA (bibliothèques partagées)")
+    endif()
+endif()
 get_filename_component(TSA_ROOT_DIR "${TSA_ROOT_DIR}" ABSOLUTE)
 if(NOT EXISTS "${TSA_ROOT_DIR}/cmake/TSAProduct.cmake")
-    message(FATAL_ERROR "Base commune TSA introuvable dans « ${TSA_ROOT_DIR} ».\n"
-                        "Cloner le dépôt TSA à côté de TSALab (../TSA) ou indiquer -DTSA_ROOT_DIR=<chemin>.")
+    message(FATAL_ERROR "Base commune TSA introuvable dans « ${TSA_ROOT_DIR} » (ni ../TSA, ni "
+                        "../Tsaraloha-Structural-Analysis).\n"
+                        "Cloner le dépôt TSA à côté de TSALab ou indiquer -DTSA_ROOT_DIR=<chemin>.")
 endif()
 message(STATUS "Base commune TSA : ${TSA_ROOT_DIR}")
 

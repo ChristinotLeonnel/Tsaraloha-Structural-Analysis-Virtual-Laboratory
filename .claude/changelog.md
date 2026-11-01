@@ -1,5 +1,13 @@
 # Changelog — TSALab
 
+## 2026-11-01 (branche fix/tsa-root-discovery)
+
+### Fixed
+- Base commune TSA trouvée sous `../TSA` ou `../Tsaraloha-Structural-Analysis` (nom du dépôt GitHub) ; `TSA_ROOT_DIR` en cache
+  invalide remplacé. Presets : chemin d'OCCT `../TSA/...` retiré (SetupDependencies.cmake de TSA le trouve dans son thirdparty/).
+- `science/CMakeLists.txt` : OpenSees de TSA par `TSA_DEPS_ROOT` ; `run.bat` : même recherche de TSA, Qt 6.12.0 si 6.11.2 absente.
+- Vérifié : `cmake --preset ninja-debug` (Qt 6.12.0, OCCT 8.0.1, OpenSees de TSA). Compilation non relancée.
+
 ## 2026-10-17 (mission « Terminer les fonctionnalités incomplètes » — branche feature/blueprint-structurel, fusionnée dans main)
 
 ### Added

@@ -51,6 +51,7 @@ endif()
 # une application le fixe par tsalab::planar::setOpenSeesExecutable, un poste par TSALAB_OPENSEES.
 if(NOT TSALAB_OPENSEES_DEFAULT)
     foreach(candidate "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/OpenSees/bin/OpenSees.exe"
+                      "${TSA_DEPS_ROOT}/thirdparty/OpenSees/bin/OpenSees.exe"
                       "${CMAKE_CURRENT_SOURCE_DIR}/../../TSA/thirdparty/OpenSees/bin/OpenSees.exe")
         if(EXISTS "${candidate}" AND NOT TSALAB_OPENSEES_DEFAULT)
             get_filename_component(TSALAB_OPENSEES_DEFAULT "${candidate}" ABSOLUTE)
