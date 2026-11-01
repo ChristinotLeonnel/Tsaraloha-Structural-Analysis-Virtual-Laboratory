@@ -57,6 +57,17 @@ namespace SG = TSALab::Research::StructuralGraphs;
 namespace RS = TSALab::Research::Structural;
 namespace S = tsalab::structural;
 
+// Fichier des dépôts voisins, quel que soit leur nom local (« TSA » / « TSALab » ou noms des dépôts GitHub) : « TSA/… »
+// est relatif à la racine de TSA, « TSALab/… » à celle de TSALab. Auparavant : <parent>/TSA/…, en échec si le dossier
+// portait un autre nom.
+QString repoFile(const QString& relative)
+{
+    if (relative.startsWith(QLatin1String("TSALab/")))
+        return QDir(QStringLiteral(TSALAB_SOURCE_DIR)).filePath(relative.mid(7));
+    const QDir tsaRoot(QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../..")));
+    return relative.startsWith(QLatin1String("TSA/")) ? tsaRoot.filePath(relative.mid(4)) : tsaRoot.filePath(relative);
+}
+
 int nodeOfType(const Graph& g, const std::string& type, int nth = 0)
 {
     for (const auto& [id, n] : g.nodes())
@@ -141,7 +152,6 @@ bool runSuite_Structural(int& passed)
         TEST_CHECK(!RS::registerStructuralNodes(global), "Test L15: enregistrement unique (second appel sans effet)");
         const auto ids = RS::structuralNodeIds(lib);
         std::map<std::string, int> perCategory;
-        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
         for (const auto& id : ids)
         {
             const auto* d = lib.find(id);
@@ -150,7 +160,7 @@ bool runSuite_Structural(int& passed)
             TEST_CHECK(experimental ? d->status == NodeStatus::Experimental : d->status != NodeStatus::Experimental,
                        "Test L15: composant expérimental séparé des composants validés (" << id << ")");
             TEST_CHECK(!d->documentation.empty() && !d->description.empty(), "Test L15: documentation du bloc " << id);
-            TEST_CHECK(!d->source.empty() && QFileInfo::exists(root.filePath(QString::fromStdString(d->source))),
+            TEST_CHECK(!d->source.empty() && QFileInfo::exists(repoFile(QString::fromStdString(d->source))),
                        "Test L15: source du bloc " << id << " présente (" << d->source << ")");
             // Bloc qui lit un fichier de l'utilisateur : ses sorties ne dépendent pas que de ses entrées, il n'est jamais réutilisé
             const bool readsFile = id == "struct.accelerogram_file" || id == "struct.model_import_tsa" || id == "struct.model_load_json"
@@ -871,14 +881,13 @@ bool runSuite_Structural(int& passed)
     // jamais modifiés ; refus motivés : fichier non TSA, tronqué, de version future, câble, portée inconnue, annulation
     // -------------------------------------------------------------------------
     {
-        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
         QTemporaryDir tmp;
         TEST_CHECK(tmp.isValid(), "Test L27: dossier temporaire");
         int importedPlanes = 0, refusedPlanes = 0, compared = 0;
         std::size_t trussBars = 0;
         for (const char* file : { "TSA_Demo_Hangar_60x40m.tsa", "TSA_Demo_Pont_Treillis_3x48m.tsa", "TSA_Projet_Batiment_BA_R+4.tsa" })
         {
-            const QString original = root.filePath(QStringLiteral("TSA/examples/") + QString::fromLatin1(file));
+            const QString original = repoFile(QStringLiteral("TSA/examples/") + QString::fromLatin1(file));
             TEST_CHECK(QFileInfo::exists(original), "Test L27: exemple TSA présent (" << file << ")");
             const std::string h0 = RS::fileSha256(original.toStdString());
             const QString copy = tmp.filePath(QString::fromLatin1(file));
@@ -1096,9 +1105,8 @@ bool runSuite_Structural(int& passed)
     // seule fois par exécution, résultat ≡ import et calcul direct en C++, projet non modifié
     // -------------------------------------------------------------------------
     {
-        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
         QTemporaryDir tmp;
-        const QString original = root.filePath(QStringLiteral("TSA/examples/TSA_Demo_Hangar_60x40m.tsa"));
+        const QString original = repoFile(QStringLiteral("TSA/examples/TSA_Demo_Hangar_60x40m.tsa"));
         const QString copy = tmp.filePath(QStringLiteral("TSA_Demo_Hangar_60x40m.tsa"));
         TEST_CHECK(tmp.isValid() && QFile::copy(original, copy), "Test L29: copie du projet");
         const std::string h0 = RS::fileSha256(copy.toStdString());
@@ -1166,9 +1174,8 @@ bool runSuite_Structural(int& passed)
         hinge.combinations = { { 5, "1,35 q + 1,5 tout", { { 1, 1.35 }, { 9, 1.5 } } } };
         TEST_CHECK(S::validate(hinge).ok(), "Test L30: variante valide (" << S::validate(hinge).text() << ")");
         // Modèle importé d'un projet TSA (traçabilité : fichier, empreinte, date)
-        const QDir root = QDir(QStringLiteral(TSALAB_TSA_BENCHMARKS)).absoluteFilePath(QStringLiteral("../../.."));
         const QString tsa = dir.filePath(QStringLiteral("hangar.tsa"));
-        TEST_CHECK(QFile::copy(root.filePath(QStringLiteral("TSA/examples/TSA_Demo_Hangar_60x40m.tsa")), tsa), "Test L30: copie du projet TSA");
+        TEST_CHECK(QFile::copy(repoFile(QStringLiteral("TSA/examples/TSA_Demo_Hangar_60x40m.tsa")), tsa), "Test L30: copie du projet TSA");
         S::Model2D imported;
         std::vector<std::string> tsaScopes;
         TEST_CHECK(RS::listTsaScopes(tsa.toStdString(), tsaScopes), "Test L30: portées du projet TSA");

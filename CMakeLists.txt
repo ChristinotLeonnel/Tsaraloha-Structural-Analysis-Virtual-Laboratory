@@ -117,7 +117,8 @@ tsa_apply_common_settings(TSALab_Research ${LAB_PRODUCT_DIR} ${LAB_DIR})
 target_precompile_headers(TSALab_Research REUSE_FROM TSALab_Model)
 target_link_libraries(TSALab_Research PUBLIC TSALab_Model)
 # Cas du banc de validation partagé (poste de développement ; le paquet les livre dans validation/cases)
-target_compile_definitions(TSALab_Research PUBLIC TSALAB_TSA_BENCHMARKS="${TSA_ROOT_DIR}/tests/benchmarks")
+target_compile_definitions(TSALab_Research PUBLIC TSALAB_TSA_BENCHMARKS="${TSA_ROOT_DIR}/tests/benchmarks"
+                                                  TSALAB_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")   # tests : fichiers des dépôts, quel que soit leur nom
 
 # =============================================================================
 # Application TSALab.exe
