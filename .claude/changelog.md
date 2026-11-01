@@ -1,5 +1,12 @@
 # Changelog — TSALab
 
+## 2026-11-01 (branche fix/tests-repo-name)
+
+### Fixed
+- Tests indépendants du nom local des dépôts : `repoFile()` résout « TSA/… » (racine de TSA) et « TSALab/… » (`TSALAB_SOURCE_DIR`,
+  nouvelle définition de TSALab_Research) ; L15, L23, L29, L30 supposaient <parent>/TSA et <parent>/TSALab (11/27 sur un poste aux
+  noms GitHub, arrêt au premier échec). Vérifié : 27/27 (Release, avec l'étape 2 de l'état du projet de TSA).
+
 ## 2026-11-01 (branche fix/tsa-root-discovery)
 
 ### Fixed
