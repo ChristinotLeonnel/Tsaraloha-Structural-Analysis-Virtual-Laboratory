@@ -343,9 +343,9 @@ ReferenceComparison squarePlateHardSupport(const Model& model, const TSA::Analys
         if (!includedCase(ctx, sl.loadCaseId)) continue;
         ++pressures;
         if (sl.targetKind != SurfaceTargetKind::Slab || sl.surfaceId != slabId || sl.distribution != SurfaceLoadDistribution::Uniform ||
-            sl.direction != SurfaceLoadDirection::Gravity || sl.zone || sl.gradU != 0.0 || sl.gradV != 0.0)
+            sl.direction != SurfaceLoadDirection::GlobalZ || sl.zone || sl.gradU != 0.0 || sl.gradV != 0.0)
             fail(QStringLiteral("charge surfacique non uniforme, partielle ou non verticale"));
-        q += sl.value;
+        q -= sl.value;   // Z global, valeur < 0 vers le bas ; q de la formule : pression descendante
     }
     if (pressures != 1) fail(QStringLiteral("une seule pression uniforme attendue (%1 dans les cas calculés)").arg(pressures));
     for (const auto& [nid, nl] : lm.nodalLoads())
