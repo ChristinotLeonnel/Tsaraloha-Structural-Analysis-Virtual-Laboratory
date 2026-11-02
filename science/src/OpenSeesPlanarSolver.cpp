@@ -54,7 +54,8 @@ std::string readFile(const fs::path& p)
     return o.str();
 }
 
-/// Lance l'exécutable avec le script ; sortie console dans logFile. Code de sortie, -1 si non lancé.
+/// Lance l'exécutable avec le script ; sortie console dans logFile. Code de sortie, -1 si non lancé, -2 si arrêté après le
+/// délai (120 s).
 int runProcess(const std::string& exe, const fs::path& script, const fs::path& logFile)
 {
 #ifdef _WIN32
@@ -80,7 +81,15 @@ int runProcess(const std::string& exe, const fs::path& script, const fs::path& l
                                    dir.c_str(), &si, &pi);
     if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
     if (!ok) return -1;
-    WaitForSingleObject(pi.hProcess, 120000);
+    // Délai dépassé : processus arrêté (BUG-160 : il restait orphelin, et son code 259 STILL_ACTIVE était lu comme code de sortie)
+    if (WaitForSingleObject(pi.hProcess, 120000) == WAIT_TIMEOUT)
+    {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 5000);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return -2;
+    }
     DWORD code = 1;
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hThread);
@@ -399,6 +408,13 @@ Output OpenSeesPlanarSolver::solve(const Input& in)
     const std::string res = readFile(result);
     const std::string console = readFile(log);
     std::error_code ec;
+    if (code == -2)
+    {
+        out.message = "OpenSees n'a pas terminé le calcul dans le délai (120 s) : processus arrêté.";
+        if (!console.empty()) out.log.push_back(console);
+        if (!keepFiles()) fs::remove_all(dir, ec);
+        return out;
+    }
     if (code == -1 || res.empty())
     {
         out.message = "OpenSees n'a produit aucun résultat (code " + std::to_string(code) + ").";
